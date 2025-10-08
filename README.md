@@ -10,7 +10,6 @@
 
 ### Project
 - **Title:** RF Fingerprint Spoofing Detection / Traffic Congestion Prediction  
-- **Repository:** [Main Project Repo](https://github.com/manifetch-lab/manifetch)
 
 ---
 
