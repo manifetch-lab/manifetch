@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+.env
+*.db
+manifetch.egg-info/
+data/
+ai_module/models/*.pkl
+ai_module/models/*.csv
+ai_module/models/plots/
+!ai_module/models/metrics_*.json
