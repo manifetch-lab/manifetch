@@ -1,0 +1,133 @@
+import { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { api } from '../api/client';
+
+const TIME_RANGES = [
+  { label: 'Last 6 Hours',  hours: 6   },
+  { label: 'Last 24 Hours', hours: 24  },
+  { label: 'Last 7 Days',   hours: 168 },
+];
+
+const SIGNALS = [
+  { key: 'HEART_RATE', label: 'Heart Rate Trend', unit: 'bpm', color: '#1a9b8c', refMin: 100, refMax: 180 },
+  { key: 'SPO2',       label: 'SpO₂ Trend',       unit: '%',   color: '#1e6eb5', refMin: 88,  refMax: 100 },
+];
+
+export default function TrendAnalysisTab({ patientId }) {
+  const [rangeIdx, setRangeIdx] = useState(1);
+  const [data,     setData]     = useState({});
+  const [stats,    setStats]    = useState({});
+  const [loading,  setLoading]  = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    const hours = TIME_RANGES[rangeIdx].hours;
+    Promise.all(
+      SIGNALS.map(s => api.getTrends(patientId, s.key, hours))
+    ).then(results => {
+      const newData = {};
+      const newStats = {};
+      SIGNALS.forEach((s, i) => {
+        const rows = results[i].data;
+        // Sample max 200 points for performance
+        const step = Math.max(1, Math.floor(rows.length / 200));
+        newData[s.key] = rows.filter((_, idx) => idx % step === 0).map(r => ({
+          t:   r.timestamp_sec,
+          val: r.value,
+        }));
+        if (rows.length > 0) {
+          const vals = rows.map(r => r.value);
+          newStats[s.key] = {
+            avg: (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1),
+            min: Math.min(...vals).toFixed(1),
+            max: Math.max(...vals).toFixed(1),
+          };
+        }
+      });
+      setData(newData);
+      setStats(newStats);
+    }).catch(console.error)
+      .finally(() => setLoading(false));
+  }, [patientId, rangeIdx]);
+
+  return (
+    <div>
+      {/* Time range selector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-muted)' }}>Time Range:</span>
+        {TIME_RANGES.map((r, i) => (
+          <button
+            key={r.label}
+            className={`btn ${rangeIdx === i ? 'btn-primary' : 'btn-outline'}`}
+            style={{ padding: '6px 16px' }}
+            onClick={() => setRangeIdx(i)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div className="loading"><div className="spinner" />Loading trend data...</div>
+      ) : (
+        <>
+          {/* Charts */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+            {SIGNALS.map(sig => {
+              const d = data[sig.key] || [];
+              const st = stats[sig.key];
+              return (
+                <div key={sig.key} className="card">
+                  <p style={{ fontWeight: 600, color: 'var(--navy)', marginBottom: 4 }}>
+                    {sig.label} ({TIME_RANGES[rangeIdx].label.replace('Last ', '')})
+                  </p>
+                  {st && (
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                      Average: {st.avg} {sig.unit} &nbsp;|&nbsp; Min: {st.min} &nbsp;|&nbsp; Max: {st.max}
+                    </p>
+                  )}
+                  {d.length === 0 ? (
+                    <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                      No data available
+                    </div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={140}>
+                      <LineChart data={d} margin={{ top: 4, right: 8, bottom: 4, left: -16 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                        <XAxis dataKey="t" hide />
+                        <YAxis domain={['auto', 'auto']} tick={{ fontSize: 11 }} />
+                        <Tooltip
+                          formatter={v => [`${parseFloat(v).toFixed(1)} ${sig.unit}`, sig.label]}
+                          labelFormatter={() => ''}
+                          contentStyle={{ fontSize: 12, borderRadius: 6 }}
+                        />
+                        <ReferenceLine y={sig.refMin} stroke="var(--danger)" strokeDasharray="4 2" strokeWidth={1} />
+                        <ReferenceLine y={sig.refMax} stroke="var(--danger)" strokeDasharray="4 2" strokeWidth={1} />
+                        <Line type="monotone" dataKey="val" stroke={sig.color} strokeWidth={1.5} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Summary */}
+          <div className="card">
+            <p style={{ fontWeight: 600, color: 'var(--navy)', marginBottom: 12 }}>
+              {TIME_RANGES[rangeIdx].label.replace('Last ', '')} Summary Statistics
+            </p>
+            {Object.entries(stats).map(([key, st]) => {
+              const sig = SIGNALS.find(s => s.key === key);
+              return (
+                <p key={key} style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  • <strong>{sig?.label}:</strong> Avg {st.avg} {sig?.unit} &nbsp;|&nbsp; Min {st.min} &nbsp;|&nbsp; Max {st.max}
+                </p>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
