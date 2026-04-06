@@ -90,7 +90,10 @@ def select_threshold(y_true, y_prob, recall_target=None):
 
 
 def ga_stratified_split(df, groups):
-    """Hasta bazlı GA-stratified train/test split."""
+    """
+    Hasta bazlı GA-stratified train/test split.
+    Garanti: train setinde her zaman en az 1 pozitif hasta kalır.
+    """
     patient_meta = df.groupby("patient_id").agg(
         ga_weeks=("ga_weeks", "first"),
         has_label=("label", "max"),
@@ -102,12 +105,15 @@ def ga_stratified_split(df, groups):
     rng = np.random.default_rng(42)
     test_pids = set()
     for _, grp in patient_meta.groupby("ga_group"):
-        pids   = grp["patient_id"].values
-        n_test = max(1, len(pids) // 4)
-        pos    = grp[grp["has_label"] == 1]["patient_id"].values
-        neg    = grp[grp["has_label"] == 0]["patient_id"].values
-        n_pos  = max(0, min(len(pos), n_test // 2 + 1)) if len(pos) > 0 else 0
-        n_neg  = max(0, min(len(neg), n_test - n_pos))
+        pos = grp[grp["has_label"] == 1]["patient_id"].values
+        neg = grp[grp["has_label"] == 0]["patient_id"].values
+        n_test = max(1, len(grp) // 4)
+
+        # Test'e en fazla pos-1 pozitif hasta al — train'de en az 1 pozitif kalsın
+        max_pos_to_test = max(0, len(pos) - 1)
+        n_pos = max(0, min(max_pos_to_test, n_test // 2))
+        n_neg = max(0, min(len(neg), n_test - n_pos))
+
         if n_pos > 0:
             test_pids.update(rng.choice(pos, size=n_pos, replace=False).tolist())
         if n_neg > 0:
