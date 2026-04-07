@@ -9,7 +9,7 @@ export default function ReportsTab({ patientId, patient }) {
   const [error,   setError]   = useState('');
   const [confirm, setConfirm] = useState(false);
   const { user } = useAuth();
-  const { t }    = useLang();
+  const { t, lang } = useLang();
   const canReport = user?.role === 'DOCTOR';
 
   const handleGenerate = async () => {
@@ -17,7 +17,7 @@ export default function ReportsTab({ patientId, patient }) {
     setError('');
     setLoading(true);
     try {
-      const res = await api.getReport(patientId, days);
+      const res = await api.getReport(patientId, days, lang);
       const patientName = patient?.full_name?.replace(/\s+/g, '_') || patientId.slice(0, 8);
       const date = new Date().toISOString().slice(0, 10);
       const url  = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
