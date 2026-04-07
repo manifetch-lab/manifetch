@@ -26,6 +26,7 @@ class PatientDTO(BaseModel):
     postnatal_age_days:    int
     admission_date:        datetime
     is_active:             bool
+    alert_status:          str = "STABLE"
 
     class Config:
         from_attributes = True
@@ -76,6 +77,29 @@ class TrendPoint(BaseModel):
     signal_type:   str
 
 
+def _compute_pna(patient) -> int:
+    """admission_date + kayıttaki postnatal_age_days = güncel yaş."""
+    try:
+        admission = patient.admission_date.replace(tzinfo=None)
+        days_since = (datetime.utcnow() - admission).days
+        return patient.postnatal_age_days + days_since
+    except Exception:
+        return patient.postnatal_age_days
+
+
+def _alert_status(db, patient_id) -> str:
+    active_alerts = (
+        db.query(Alert)
+        .filter(Alert.patient_id == patient_id, Alert.status == AlertStatus.ACTIVE.value)
+        .all()
+    )
+    if any(a.severity in ("HIGH", "CRITICAL") for a in active_alerts):
+        return "CRITICAL"
+    elif active_alerts:
+        return "MONITORING"
+    return "STABLE"
+
+
 # ── Endpoint'ler ──────────────────────────────────────────────────────────────
 
 @router.get("/patients", response_model=list[PatientDTO])
@@ -84,7 +108,6 @@ def get_patients(
     db:          Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Tüm hastaları listele."""
     query = db.query(Patient)
     if active_only:
         query = query.filter(Patient.is_active == True)
@@ -94,9 +117,10 @@ def get_patients(
             patient_id            = p.patient_id,
             full_name             = p.full_name,
             gestational_age_weeks = p.gestational_age_weeks,
-            postnatal_age_days    = p.postnatal_age_days,
+            postnatal_age_days    = _compute_pna(p),
             admission_date        = p.admission_date,
             is_active             = p.is_active,
+            alert_status          = _alert_status(db, p.patient_id),
         )
         for p in patients
     ]
@@ -108,7 +132,6 @@ def get_patient_details(
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Hasta detaylarını getir."""
     patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
@@ -116,21 +139,21 @@ def get_patient_details(
         patient_id            = patient.patient_id,
         full_name             = patient.full_name,
         gestational_age_weeks = patient.gestational_age_weeks,
-        postnatal_age_days    = patient.postnatal_age_days,
+        postnatal_age_days    = _compute_pna(patient),
         admission_date        = patient.admission_date,
         is_active             = patient.is_active,
+        alert_status          = _alert_status(db, patient.patient_id),
     )
 
 
 @router.get("/patients/{patient_id}/alerts", response_model=list[AlertDTO])
 def get_active_alerts(
     patient_id:   str,
-    status:       Optional[str] = Query(None, description="ACTIVE, ACKNOWLEDGED, RESOLVED"),
+    status:       Optional[str] = Query(None),
     limit:        int = Query(50, ge=1, le=200),
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Hasta alertlerini getir."""
     query = db.query(Alert).filter(Alert.patient_id == patient_id)
     if status:
         query = query.filter(Alert.status == status)
@@ -160,13 +183,11 @@ def acknowledge_alert(
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_nurse),
 ):
-    """Alert'i onayla — NURSE veya DOCTOR yetkisi gerekli."""
     alert = db.query(Alert).filter(Alert.alert_id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert bulunamadı.")
     if alert.status != AlertStatus.ACTIVE.value:
         return {"status": alert.status, "alert_id": alert_id}
-
     alert.status          = AlertStatus.ACKNOWLEDGED.value
     alert.acknowledged_at = datetime.utcnow()
     alert.acknowledged_by = current_user.user_id
@@ -180,7 +201,6 @@ def resolve_alert(
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_nurse),
 ):
-    """Alert'i çöz."""
     alert = db.query(Alert).filter(Alert.alert_id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert bulunamadı.")
@@ -198,14 +218,12 @@ def get_latest_vitals(
     db:          Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Son vital ölçümleri getir."""
     query = db.query(VitalMeasurement).filter(
         VitalMeasurement.patient_id == patient_id,
         VitalMeasurement.is_valid   == True,
     )
     if signal_type:
         query = query.filter(VitalMeasurement.signal_type == signal_type)
-
     measurements = query.order_by(desc(VitalMeasurement.timestamp)).limit(limit).all()
     return [
         VitalDTO(
@@ -224,12 +242,11 @@ def get_latest_vitals(
 @router.get("/patients/{patient_id}/trends")
 def get_trend_data(
     patient_id:  str,
-    signal_type: str = Query(..., description="HEART_RATE, SPO2, RESP_RATE"),
+    signal_type: str = Query(...),
     hours:       int = Query(24, ge=1, le=168),
     db:          Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Trend verisi — son X saatlik."""
     since = datetime.utcnow() - timedelta(hours=hours)
     measurements = (
         db.query(VitalMeasurement)
@@ -260,7 +277,6 @@ def get_ai_results(
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_any_role),
 ):
-    """Son AI sonuçlarını getir."""
     results = (
         db.query(AIResult)
         .filter(AIResult.patient_id == patient_id)
@@ -289,7 +305,6 @@ def get_pdf_report(
     db:           Session = Depends(get_db),
     current_user: User = Depends(require_doctor),
 ):
-    """PDF klinik rapor — sadece DOCTOR."""
     patient = db.query(Patient).filter(Patient.patient_id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Hasta bulunamadı.")
@@ -311,20 +326,21 @@ def get_pdf_report(
         .all()
     )
 
-    # PDF içeriği oluştur
-    pdf_content = _generate_pdf(patient, alerts, ai_results, days)
+    pna = _compute_pna(patient)
+    pdf_content = _generate_pdf(patient, alerts, ai_results, days, pna)
 
+    patient_name = patient.full_name.replace(" ", "_")
+    date_str = datetime.now().strftime("%Y%m%d")
     return StreamingResponse(
         BytesIO(pdf_content),
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f"attachment; filename=report_{patient_id[:8]}_{datetime.now().strftime('%Y%m%d')}.pdf"
+            "Content-Disposition": f"attachment; filename=NICU_Report_{patient_name}_{date_str}.pdf"
         },
     )
 
 
-def _generate_pdf(patient, alerts, ai_results, days: int) -> bytes:
-    """Basit PDF raporu üretir."""
+def _generate_pdf(patient, alerts, ai_results, days: int, pna: int) -> bytes:
     try:
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import getSampleStyleSheet
@@ -333,53 +349,86 @@ def _generate_pdf(patient, alerts, ai_results, days: int) -> bytes:
         from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
         from reportlab.lib.styles import ParagraphStyle
     except ImportError:
-        # reportlab yoksa basit text döndür
-        content = f"Manifetch NICU Clinical Report\n"
-        content += f"Patient: {patient.full_name}\n"
-        content += f"GA: {patient.gestational_age_weeks}w PNA: {patient.postnatal_age_days}d\n"
-        content += f"Period: Last {days} days\n\n"
-        content += f"Alerts: {len(alerts)}\n"
-        for a in alerts:
-            content += f"  [{a.severity}] {a.status} - {a.created_at.strftime('%Y-%m-%d %H:%M')}\n"
-        content += f"\nAI Results: {len(ai_results)}\n"
-        for r in ai_results:
-            content += f"  [{r.risk_level}] Score={r.risk_score:.3f} - {r.timestamp.strftime('%Y-%m-%d %H:%M')}\n"
+        content = f"Manifetch NICU Clinical Report\nPatient: {patient.full_name}\n"
         return content.encode("utf-8")
 
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    import os as _os, uuid as _uuid
+
+    FONT = "Helvetica"
+    font_paths = [
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+        "C:/Windows/Fonts/segoeui.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        _os.path.join(_os.path.dirname(__file__), "DejaVuSans.ttf"),
+    ]
+    try:
+        import reportlab as _rl
+        font_paths.insert(0, _os.path.join(_os.path.dirname(_rl.__file__), "fonts", "DejaVuSans.ttf"))
+    except Exception:
+        pass
+
+    for fp in font_paths:
+        if _os.path.exists(fp):
+            try:
+                font_name = "TurkishFont"
+                pdfmetrics.registerFont(TTFont(font_name, fp))
+                FONT = font_name
+                break
+            except Exception:
+                pass
+
+    _uid = _uuid.uuid4().hex[:8]
+    title_style   = ParagraphStyle(f"CT_{_uid}", fontName=FONT, fontSize=18, spaceAfter=12, alignment=1)
+    heading_style = ParagraphStyle(f"CH_{_uid}", fontName=FONT, fontSize=13, spaceAfter=8,  spaceBefore=12)
+    normal_style  = ParagraphStyle(f"CN_{_uid}", fontName=FONT, fontSize=10, spaceAfter=6)
+    small_style   = ParagraphStyle(f"CS_{_uid}", fontName=FONT, fontSize=8,  textColor=colors.grey)
+
+    def table_style_base(header=False):
+        base = [
+            ("FONTNAME",  (0, 0), (-1, -1), FONT),
+            ("FONTSIZE",  (0, 0), (-1, -1), 10),
+            ("GRID",      (0, 0), (-1, -1), 0.5, colors.grey),
+            ("PADDING",   (0, 0), (-1, -1), 6),
+        ]
+        if header:
+            base += [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
+                ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
+                ("FONTSIZE",   (0, 0), (-1, -1), 9),
+                ("PADDING",    (0, 0), (-1, -1), 5),
+            ]
+        return base
+
     buffer = BytesIO()
-    doc    = SimpleDocTemplate(buffer, pagesize=A4,
-                               topMargin=2*cm, bottomMargin=2*cm,
-                               leftMargin=2*cm, rightMargin=2*cm)
-    styles  = getSampleStyleSheet()
-    story   = []
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            topMargin=2*cm, bottomMargin=2*cm,
+                            leftMargin=2*cm, rightMargin=2*cm)
+    story = []
 
-    # Başlık
-    story.append(Paragraph("Manifetch NICU — Klinik Rapor", styles["Title"]))
+    story.append(Paragraph("Manifetch NICU — Klinik Rapor", title_style))
     story.append(Spacer(1, 0.5*cm))
-    story.append(Paragraph(f"Oluşturulma tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", styles["Normal"]))
+    story.append(Paragraph(f"Oluşturulma tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", normal_style))
     story.append(Spacer(1, 0.5*cm))
 
-    # Hasta bilgileri
-    story.append(Paragraph("Hasta Bilgileri", styles["Heading2"]))
+    story.append(Paragraph("Hasta Bilgileri", heading_style))
     patient_data = [
-        ["Ad Soyad",          patient.full_name],
-        ["Gestasyonel Yaş",   f"{patient.gestational_age_weeks} hafta"],
-        ["Postnatal Yaş",     f"{patient.postnatal_age_days} gün"],
-        ["Kabul Tarihi",      patient.admission_date.strftime("%d.%m.%Y")],
-        ["Rapor Dönemi",      f"Son {days} gün"],
+        ["Ad Soyad",        patient.full_name],
+        ["Gestasyonel Yaş", f"{patient.gestational_age_weeks} hafta"],
+        ["Postnatal Yaş",   f"{pna} gün"],
+        ["Kabul Tarihi",    patient.admission_date.strftime("%d.%m.%Y")],
+        ["Rapor Dönemi",    f"Son {days} gün"],
     ]
     t = Table(patient_data, colWidths=[5*cm, 10*cm])
-    t.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
-        ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
-        ("FONTSIZE",   (0, 0), (-1, -1), 10),
-        ("PADDING",    (0, 0), (-1, -1), 6),
-    ]))
+    ts = table_style_base()
+    ts.append(("BACKGROUND", (0, 0), (0, -1), colors.lightgrey))
+    t.setStyle(TableStyle(ts))
     story.append(t)
     story.append(Spacer(1, 0.5*cm))
 
-    # Alertler
-    story.append(Paragraph(f"Alarm Kayıtları ({len(alerts)} adet)", styles["Heading2"]))
+    story.append(Paragraph(f"Alarm Kayıtları ({len(alerts)} adet)", heading_style))
     if alerts:
         alert_data = [["Tarih", "Şiddet", "Durum"]]
         for a in alerts[:20]:
@@ -389,21 +438,15 @@ def _generate_pdf(patient, alerts, ai_results, days: int) -> bytes:
                 a.status,
             ])
         t = Table(alert_data, colWidths=[6*cm, 4*cm, 5*cm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
-            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
-            ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE",   (0, 0), (-1, -1), 9),
-            ("PADDING",    (0, 0), (-1, -1), 5),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightyellow]),
-        ]))
+        ts = table_style_base(header=True)
+        ts.append(("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightyellow]))
+        t.setStyle(TableStyle(ts))
         story.append(t)
     else:
-        story.append(Paragraph("Bu dönemde alarm kaydı bulunmamaktadır.", styles["Normal"]))
+        story.append(Paragraph("Bu dönemde alarm kaydı bulunmamaktadır.", normal_style))
     story.append(Spacer(1, 0.5*cm))
 
-    # AI Sonuçları
-    story.append(Paragraph(f"AI Risk Değerlendirmesi ({len(ai_results)} kayıt)", styles["Heading2"]))
+    story.append(Paragraph(f"AI Risk Değerlendirmesi ({len(ai_results)} kayıt)", heading_style))
     if ai_results:
         ai_data = [["Tarih", "Risk Skoru", "Risk Seviyesi", "Model"]]
         for r in ai_results[:15]:
@@ -414,27 +457,19 @@ def _generate_pdf(patient, alerts, ai_results, days: int) -> bytes:
                 r.model_used,
             ])
         t = Table(ai_data, colWidths=[6*cm, 3*cm, 4*cm, 4*cm])
-        t.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
-            ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
-            ("GRID",       (0, 0), (-1, -1), 0.5, colors.grey),
-            ("FONTSIZE",   (0, 0), (-1, -1), 9),
-            ("PADDING",    (0, 0), (-1, -1), 5),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightblue]),
-        ]))
+        ts = table_style_base(header=True)
+        ts.append(("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.lightblue]))
+        t.setStyle(TableStyle(ts))
         story.append(t)
     else:
-        story.append(Paragraph("Bu dönemde AI değerlendirmesi bulunmamaktadır.", styles["Normal"]))
+        story.append(Paragraph("Bu dönemde AI değerlendirmesi bulunmamaktadır.", normal_style))
 
-    # Yasal not
     story.append(Spacer(1, 1*cm))
-    disclaimer_style = ParagraphStyle("disclaimer", parent=styles["Normal"],
-                                      fontSize=8, textColor=colors.grey)
     story.append(Paragraph(
         "Bu rapor Manifetch NICU izleme sistemi tarafından otomatik oluşturulmuştur. "
         "Klinik karar desteği amacıyla sunulmakta olup sertifikalı tıbbi cihazların yerini tutmaz. "
         "Nihai klinik kararlar uzman hekim tarafından verilmelidir.",
-        disclaimer_style
+        small_style
     ))
 
     doc.build(story)

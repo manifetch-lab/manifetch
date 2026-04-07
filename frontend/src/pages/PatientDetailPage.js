@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import { useLang } from '../context/LanguageContext';
 import RealTimeMonitor from '../components/RealTimeMonitor';
 import AIResultsTab from '../components/AIResultsTab';
 import TrendAnalysisTab from '../components/TrendAnalysisTab';
@@ -15,28 +16,24 @@ export default function PatientDetailPage() {
   const [tab,      setTab]      = useState(0);
   const [loading,  setLoading]  = useState(true);
   const { user }   = useAuth();
+  const { t }      = useLang();
   const navigate   = useNavigate();
 
-  // Admin hasta sayfasına giremez
   useEffect(() => {
     if (user?.role === 'ADMINISTRATOR') {
       navigate('/admin', { replace: true });
     }
   }, [user, navigate]);
 
-  // Nurse için tab listesi — AI Results yok
   const TABS = user?.role === 'NURSE'
-    ? ['Real-Time Monitor', 'Trend Analysis', 'Reports']
-    : ['Real-Time Monitor', 'AI Results', 'Trend Analysis', 'Reports'];
+    ? [t.tabs.realTimeMonitor, t.tabs.trendAnalysis, t.tabs.reports]
+    : [t.tabs.realTimeMonitor, t.tabs.aiResults, t.tabs.trendAnalysis, t.tabs.reports];
 
-  // Tab index mapping — Nurse'te AI Results yok, index kayması var
   const getTabContent = (tabIdx) => {
     if (user?.role === 'NURSE') {
-      const nurseMap = ['monitor', 'trend', 'reports'];
-      return nurseMap[tabIdx];
+      return ['monitor', 'trend', 'reports'][tabIdx];
     }
-    const doctorMap = ['monitor', 'ai', 'trend', 'reports'];
-    return doctorMap[tabIdx];
+    return ['monitor', 'ai', 'trend', 'reports'][tabIdx];
   };
 
   useEffect(() => {
@@ -54,8 +51,8 @@ export default function PatientDetailPage() {
 
   if (loading) return (
     <div>
-      <Topbar title="Patient Detail" />
-      <div className="loading"><div className="spinner" />Loading...</div>
+      <Topbar title={t.patientDetail.loading} />
+      <div className="loading"><div className="spinner" />{t.patientDetail.loading}</div>
     </div>
   );
 
@@ -63,23 +60,21 @@ export default function PatientDetailPage() {
 
   return (
     <div>
-      <Topbar title={patient ? `Patient: ${patient.full_name}` : 'Patient Detail'} />
+      <Topbar title={patient ? `${t.patientDetail.patientInfo}: ${patient.full_name}` : t.patientDetail.loading} />
       <div className="page-content">
-
-        {/* Info + Alert row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
           <div className="card" style={{ padding: '14px 18px' }}>
-            <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 4 }}>Patient Info</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 4 }}>{t.patientDetail.patientInfo}</p>
             <p style={{ fontWeight: 600 }}>{patient?.full_name}</p>
             <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              GA: {patient?.gestational_age_weeks}w &nbsp;|&nbsp; PNA: {patient?.postnatal_age_days}d
+              {t.common.ga}: {patient?.gestational_age_weeks}{t.common.weeks} &nbsp;|&nbsp; {t.common.pna}: {patient?.postnatal_age_days}{t.common.days}
             </p>
           </div>
           <div className="card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ width: 10, height: 10, background: '#22c55e', borderRadius: '50%', display: 'inline-block' }} />
             <div>
-              <p style={{ fontWeight: 600, color: 'var(--teal)' }}>Device Connected</p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Real-time monitoring active</p>
+              <p style={{ fontWeight: 600, color: 'var(--teal)' }}>{t.patientDetail.deviceConnected}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t.patientDetail.monitoringActive}</p>
             </div>
           </div>
           <div className="card" style={{
@@ -89,30 +84,28 @@ export default function PatientDetailPage() {
           }}>
             {hasHighAlert ? (
               <>
-                <p style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>⚠ CRITICAL ALERT</p>
+                <p style={{ color: 'white', fontWeight: 700, fontSize: 14 }}>{t.patientDetail.criticalAlert}</p>
                 <p style={{ color: 'rgba(255,255,255,0.9)', fontSize: 12 }}>
-                  {alerts[0]?.severity} severity — {alerts.length} active alert(s)
+                  {alerts[0]?.severity} — {alerts.length} {t.patientDetail.activeAlerts}
                 </p>
               </>
             ) : (
               <>
-                <p style={{ color: 'var(--teal)', fontWeight: 700, fontSize: 14 }}>✓ No Critical Alerts</p>
-                <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>{alerts.length} active alert(s)</p>
+                <p style={{ color: 'var(--teal)', fontWeight: 700, fontSize: 14 }}>{t.patientDetail.noCriticalAlerts}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 12 }}>{alerts.length} {t.patientDetail.activeAlerts}</p>
               </>
             )}
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="tabs">
-          {TABS.map((t, i) => (
-            <button key={t} className={`tab ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>
-              {t}
+          {TABS.map((tabName, i) => (
+            <button key={tabName} className={`tab ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>
+              {tabName}
             </button>
           ))}
         </div>
 
-        {/* Tab content */}
         {activeTab === 'monitor' && <RealTimeMonitor patientId={patientId} alerts={alerts} setAlerts={setAlerts} />}
         {activeTab === 'ai'      && <AIResultsTab    patientId={patientId} />}
         {activeTab === 'trend'   && <TrendAnalysisTab patientId={patientId} />}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { LanguageProvider } from './context/LanguageContext';
 import PrivateRoute from './components/PrivateRoute';
 
 import LoginPage from './pages/LoginPage';
@@ -17,23 +18,25 @@ function HomeRedirect() {
 
 function App() {
   return (
-    <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/patients" element={
-            <PrivateRoute><PatientListPage /></PrivateRoute>
-          } />
-          <Route path="/patients/:patientId" element={
-            <PrivateRoute><PatientDetailPage /></PrivateRoute>
-          } />
-          <Route path="/admin" element={
-            <PrivateRoute roles={['ADMINISTRATOR']}><AdminPage /></PrivateRoute>
-          } />
-          <Route path="/" element={<HomeRedirect />} />
-        </Routes>
-      </BrowserRouter>
-    </AuthProvider>
+    <LanguageProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/patients" element={
+              <PrivateRoute><PatientListPage /></PrivateRoute>
+            } />
+            <Route path="/patients/:patientId" element={
+              <PrivateRoute><PatientDetailPage /></PrivateRoute>
+            } />
+            <Route path="/admin" element={
+              <PrivateRoute roles={['ADMINISTRATOR']}><AdminPage /></PrivateRoute>
+            } />
+            <Route path="/" element={<HomeRedirect />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </LanguageProvider>
   );
 }
 

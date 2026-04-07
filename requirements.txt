@@ -9,4 +9,5 @@ scipy
 neurokit2
 pywavelets
 websockets
-python-multipart
+python-multipartr
+reportlab
