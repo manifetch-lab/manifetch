@@ -223,8 +223,8 @@ def build_windows(patient_df: pd.DataFrame, disease: str,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input",      default="veriler_v6/all_vitals.csv")
-    parser.add_argument("--output_dir", default="veriler_v6")
+    parser.add_argument("--input",      default="data/all_data/all_vitals.csv")
+    parser.add_argument("--output_dir", default="data/all_data")
     parser.add_argument("--no_ecg",     action="store_true",
                         help="ECG özelliklerini atlama (hızlı test için)")
     args = parser.parse_args()

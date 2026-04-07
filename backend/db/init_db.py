@@ -14,13 +14,13 @@ def init_db():
     print("=== Kullanici Seed ===")
     seed_users()
     print()
+    
+    print("=== Vital Measurements Seed ===")
+    seed_vitals()
+    print()
 
     print("=== Threshold Seed ===")
     seed_thresholds()
-    print()
-
-    print("=== Vital Measurements Seed ===")
-    seed_vitals()
     print()
 
     print("=== Veritabani hazir ===")
