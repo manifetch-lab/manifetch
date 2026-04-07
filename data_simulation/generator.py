@@ -813,7 +813,7 @@ def main():
     parser.add_argument("--n_patients",     type=int,   default=10)
     parser.add_argument("--duration_hours", type=float, default=48)
     parser.add_argument("--healthy_ratio",  type=float, default=0.30)
-    parser.add_argument("--output_dir",     type=str,   default="veriler_v6")
+    parser.add_argument("--output_dir",     type=str,   default="data/all_data")
     parser.add_argument("--seed",           type=int,   default=42)
     parser.add_argument("--no_ecg",         action="store_true",
                         help="ECG waveform üretme (büyük dosya, test için)")

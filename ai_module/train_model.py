@@ -571,7 +571,7 @@ def cross_validate_disease(disease: str, data_dir: str, out_dir: str,
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data_dir", default="veriler_v6")
+    parser.add_argument("--data_dir", default="data/all_data")
     parser.add_argument("--out_dir",  default="models")
     parser.add_argument("--disease",  default="all", choices=["all"] + DISEASES)
     parser.add_argument("--cv",       action="store_true",
