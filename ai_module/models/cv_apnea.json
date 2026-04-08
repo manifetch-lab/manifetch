@@ -1,0 +1,67 @@
+{
+  "disease": "apnea",
+  "n_folds": 5,
+  "folds": [
+    {
+      "fold": 1,
+      "n_train_patients": 80,
+      "n_test_patients": 20,
+      "n_train": 226400,
+      "n_test": 56600,
+      "roc_auc": 0.9116,
+      "pr_auc": 0.6619,
+      "f1": 0.4803,
+      "best_iter": 82
+    },
+    {
+      "fold": 2,
+      "n_train_patients": 80,
+      "n_test_patients": 20,
+      "n_train": 226400,
+      "n_test": 56600,
+      "roc_auc": 0.9782,
+      "pr_auc": 0.6558,
+      "f1": 0.6439,
+      "best_iter": 5
+    },
+    {
+      "fold": 3,
+      "n_train_patients": 80,
+      "n_test_patients": 20,
+      "n_train": 226400,
+      "n_test": 56600,
+      "roc_auc": 0.9263,
+      "pr_auc": 0.4897,
+      "f1": 0.51,
+      "best_iter": 2
+    },
+    {
+      "fold": 4,
+      "n_train_patients": 80,
+      "n_test_patients": 20,
+      "n_train": 226400,
+      "n_test": 56600,
+      "roc_auc": 0.9587,
+      "pr_auc": 0.7644,
+      "f1": 0.6784,
+      "best_iter": 62
+    },
+    {
+      "fold": 5,
+      "n_train_patients": 80,
+      "n_test_patients": 20,
+      "n_train": 226400,
+      "n_test": 56600,
+      "roc_auc": 0.9529,
+      "pr_auc": 0.6043,
+      "f1": 0.5832,
+      "best_iter": 12
+    }
+  ],
+  "mean_roc_auc": 0.9455,
+  "std_roc_auc": 0.0237,
+  "mean_pr_auc": 0.6352,
+  "std_pr_auc": 0.0894,
+  "mean_f1": 0.5792,
+  "std_f1": 0.0756
+}

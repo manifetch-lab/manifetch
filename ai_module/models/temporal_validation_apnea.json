@@ -1,0 +1,40 @@
+{
+  "disease": "apnea",
+  "split": "temporal_80_20",
+  "n_train_patients": 100,
+  "n_test_patients": 100,
+  "n_train_windows": 226400,
+  "n_test_windows": 56600,
+  "pos_ratio_test": 0.0898,
+  "f1_target": 0.8,
+  "all_f1_targets_met": false,
+  "results": {
+    "lgb": {
+      "f1": 0.6159,
+      "recall": 0.8502,
+      "precision": 0.4828,
+      "auc": 0.9525,
+      "aupr": 0.6096,
+      "threshold": 0.2411,
+      "f1_target_met": false
+    },
+    "rf": {
+      "f1": 0.6592,
+      "recall": 0.8502,
+      "precision": 0.5383,
+      "auc": 0.9698,
+      "aupr": 0.7711,
+      "threshold": 0.7059,
+      "f1_target_met": false
+    },
+    "xgb": {
+      "f1": 0.679,
+      "recall": 0.85,
+      "precision": 0.5653,
+      "auc": 0.9708,
+      "aupr": 0.8163,
+      "threshold": 0.7526,
+      "f1_target_met": false
+    }
+  }
+}

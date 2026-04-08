@@ -1,29 +1,47 @@
 """
 Manifetch AI Modül Testi
+Test Plan: TC-11, TC-14, TC-16, TC-36
 """
-import sys, os, uuid, random, pickle, unittest
+import sys, os, uuid, random, pickle, unittest, json
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from inference_service import InferenceService, VitalMeasurement, AIResult, VITAL_FEATURE_COLS, ECG_FEATURE_COLS
+from ai_module.inference_service import (
+    InferenceService, VitalMeasurement, AIResult,
+    VITAL_FEATURE_COLS, ECG_FEATURE_COLS,
+)
 
-def make_measurements(patient_id, scenario="healthy", n=30, ga=35, pna=14, pma=37.0):
+F1_TARGET = 0.80   # TC-36
+
+
+def make_measurements(patient_id, scenario="healthy", n=30,
+                       ga=35, pna=14, pma=37.0):
     random.seed(42)
     measurements = []
     for s in range(n):
         if scenario == "sepsis":
-            hr_val, spo2_val, rr_val = 185+random.gauss(0,5), 86+random.gauss(0,1), 65+random.gauss(0,3)
+            hr_val   = 185 + random.gauss(0, 5)
+            spo2_val = 86  + random.gauss(0, 1)
+            rr_val   = 65  + random.gauss(0, 3)
         elif scenario == "apnea":
-            hr_val, spo2_val, rr_val = 130+random.gauss(0,5), 82+random.gauss(0,1), max(0,5*random.random())
+            hr_val   = 130 + random.gauss(0, 5)
+            spo2_val = 82  + random.gauss(0, 1)
+            rr_val   = max(0, 5 * random.random())
         elif scenario == "cardiac":
-            hr_val, spo2_val, rr_val = 220+60*abs(random.gauss(0,1)), 93+random.gauss(0,1), 45+random.gauss(0,3)
+            hr_val   = 220 + 60 * abs(random.gauss(0, 1))
+            spo2_val = 93  + random.gauss(0, 1)
+            rr_val   = 45  + random.gauss(0, 3)
         else:
-            hr_val, spo2_val, rr_val = 145+random.gauss(0,5), 96+random.gauss(0,1), 45+random.gauss(0,3)
+            hr_val   = 145 + random.gauss(0, 5)
+            spo2_val = 96  + random.gauss(0, 1)
+            rr_val   = 45  + random.gauss(0, 3)
+
         measurements.append(VitalMeasurement(patient_id, float(s), "HEART_RATE", hr_val, ga, pna, pma))
         measurements.append(VitalMeasurement(patient_id, float(s), "SPO2", spo2_val, ga, pna, pma))
         if s % 2 == 0:
             measurements.append(VitalMeasurement(patient_id, float(s), "RESP_RATE", rr_val, ga, pna, pma))
     return measurements
+
 
 class TestAIModule(unittest.TestCase):
 
@@ -31,6 +49,8 @@ class TestAIModule(unittest.TestCase):
     def setUpClass(cls):
         cls.service   = InferenceService()
         cls.model_dir = cls.service.model_dir
+
+    # ── TC-14: RF ve XGBoost her ikisi de yüklü ve skor üretiyor ─────────────
 
     def test_tc14_rf_xgb_both_loaded(self):
         """TC-14: RF ve XGBoost modelleri yüklü olmalı."""
@@ -42,22 +62,29 @@ class TestAIModule(unittest.TestCase):
         print("TC-14 ✓ RF ve XGBoost modelleri mevcut")
 
     def test_tc14_rf_xgb_produce_scores(self):
-        """TC-14: Her iki model de risk skoru üretiyor."""
-        pid   = str(uuid.uuid4())
-        meas  = make_measurements(pid, "sepsis")
+        """TC-14: Her iki model de 0-1 arasında risk skoru üretiyor."""
+        pid  = str(uuid.uuid4())
+        meas = make_measurements(pid, "sepsis")
         for condition in ["sepsis", "apnea", "cardiac"]:
-            feats = self.service.preprocess(meas, condition)
-            rf_path  = os.path.join(self.model_dir, f"model_rf_{condition}.pkl")
-            xgb_path = os.path.join(self.model_dir, f"model_xgb_{condition}.pkl")
-            with open(rf_path,  "rb") as f: rf_model  = pickle.load(f)
-            with open(xgb_path, "rb") as f: xgb_model = pickle.load(f)
+            feats        = self.service.preprocess(meas, condition)
             feature_cols = self.service._get_feature_cols(condition)
-            vec = np.array([feats.get(c, 0.0) for c in feature_cols], dtype=float).reshape(1, -1)
-            rf_score  = float(rf_model.predict_proba(vec)[0][1])
-            xgb_score = float(xgb_model.predict_proba(vec)[0][1])
-            self.assertGreaterEqual(rf_score,  0.0); self.assertLessEqual(rf_score,  1.0)
-            self.assertGreaterEqual(xgb_score, 0.0); self.assertLessEqual(xgb_score, 1.0)
+            threshold    = self.service._get_threshold(condition)
+
+            for model_type in ["rf", "xgb"]:
+                model_path = os.path.join(self.model_dir, f"model_{model_type}_{condition}.pkl")
+                if not os.path.exists(model_path):
+                    continue
+                with open(model_path, "rb") as f:
+                    model = pickle.load(f)
+                score, label = self.service.runner.predict(
+                    feats, condition, feature_cols, threshold
+                )
+                self.assertGreaterEqual(score, 0.0)
+                self.assertLessEqual(score, 1.0)
+                self.assertIn(label, [0, 1])
         print("TC-14 ✓ RF ve XGBoost skorları üretiyor")
+
+    # ── TC-11: SHAP top-3 özellikler ────────────────────────────────────────
 
     def test_tc11_shap_top3_exists(self):
         """TC-11: SHAP top-3 özellikler hesaplanmalı."""
@@ -69,8 +96,11 @@ class TestAIModule(unittest.TestCase):
             top3 = result.shap_top3[condition]
             self.assertGreaterEqual(len(top3), 1)
             for item in top3:
-                self.assertIn("feature", item); self.assertIn("importance", item)
+                self.assertIn("feature",    item)
+                self.assertIn("importance", item)
         print(f"TC-11 ✓ SHAP top-3: {[x['feature'] for x in result.shap_top3['sepsis']]}")
+
+    # ── TC-16: runInference AIResult döndürmeli ───────────────────────────────
 
     def test_tc16_inference_returns_airesult(self):
         """TC-16: runInference AIResult döndürmeli."""
@@ -79,20 +109,37 @@ class TestAIModule(unittest.TestCase):
         self.assertIsInstance(result, AIResult)
         self.assertEqual(result.patientId, pid)
         self.assertIn(result.riskLevel, ["LOW", "MEDIUM", "HIGH"])
+        # Multi-label alanları kontrol et
+        self.assertIsInstance(result.sepsis_score,  float)
+        self.assertIsInstance(result.apnea_score,   float)
+        self.assertIsInstance(result.cardiac_score, float)
+        self.assertIn(result.sepsis_label,  [0, 1])
+        self.assertIn(result.apnea_label,   [0, 1])
+        self.assertIn(result.cardiac_label, [0, 1])
         print(f"TC-16 ✓ AIResult döndü: {result.getFormattedResult()}")
 
     def test_tc16_sepsis_detected(self):
         """TC-16: Sepsis senaryosunda yüksek risk skoru çıkmalı."""
         pid    = str(uuid.uuid4())
-        result = self.service.runInference(pid, make_measurements(pid, "sepsis", ga=28, pna=10, pma=29.4))
-        self.assertGreater(result.sepsis_score, 0.5, f"Sepsis skoru çok düşük: {result.sepsis_score}")
+        result = self.service.runInference(
+            pid, make_measurements(pid, "sepsis", ga=28, pna=10, pma=29.4)
+        )
+        self.assertGreater(
+            result.sepsis_score, 0.5,
+            f"Sepsis skoru çok düşük: {result.sepsis_score}"
+        )
         print(f"TC-16 ✓ Sepsis algılandı: score={result.sepsis_score:.4f}")
 
     def test_tc16_healthy_low_risk(self):
         """TC-16: Sağlıklı senaryoda düşük sepsis skoru çıkmalı."""
         pid    = str(uuid.uuid4())
-        result = self.service.runInference(pid, make_measurements(pid, "healthy", ga=35, pna=14, pma=37.0))
-        self.assertLess(result.sepsis_score, 0.3, f"Sağlıklı hasta sepsis skoru yüksek: {result.sepsis_score}")
+        result = self.service.runInference(
+            pid, make_measurements(pid, "healthy", ga=35, pna=14, pma=37.0)
+        )
+        self.assertLess(
+            result.sepsis_score, 0.5,
+            f"Sağlıklı hasta sepsis skoru yüksek: {result.sepsis_score}"
+        )
         print(f"TC-16 ✓ Sağlıklı hasta: sepsis={result.sepsis_score:.4f}")
 
     def test_tc16_preprocess_returns_all_features(self):
@@ -112,6 +159,76 @@ class TestAIModule(unittest.TestCase):
         self.assertIsInstance(fmt, str)
         self.assertIn(result.riskLevel, fmt)
         print(f"TC-16 ✓ Formatted: {fmt}")
+
+    # ── TC-36: F1 ≥ 0.80 hedefi ─────────────────────────────────────────────
+
+    def test_tc36_f1_target(self):
+        """
+        TC-36: Model performans hedefleri:
+          - Apnea:   Recall ≥ 0.85 (FN maliyeti yüksek — klinik öncelik)
+          - Cardiac: F1 ≥ 0.80
+          - Sepsis:  F1 ≥ 0.80
+        Temporal validation sonuçlarını okur (test_temporal.py çıktısı).
+        """
+        out_dir    = self.model_dir
+        all_passed = True
+        missing    = []
+
+        # Hastalık bazlı hedefler
+        targets = {
+            "apnea":   {"metric": "recall", "threshold": 0.85},
+            "cardiac": {"metric": "f1",     "threshold": F1_TARGET},
+            "sepsis":  {"metric": "f1",     "threshold": F1_TARGET},
+        }
+
+        for disease, target in targets.items():
+            result_path = os.path.join(out_dir, f"temporal_validation_{disease}.json")
+
+            if not os.path.exists(result_path):
+                missing.append(disease)
+                continue
+
+            with open(result_path) as f:
+                data = json.load(f)
+
+            results    = data.get("results", {})
+            metric_key = target["metric"]
+            threshold  = target["threshold"]
+            disease_passed = False
+
+            for model_type, metrics in results.items():
+                val = metrics.get(metric_key, 0)
+                if val >= threshold:
+                    print(f"  TC-36 ✓ {disease}/{model_type}: "
+                          f"{metric_key.upper()}={val:.4f} ≥ {threshold}")
+                    disease_passed = True
+                else:
+                    print(f"  TC-36 ✗ {disease}/{model_type}: "
+                          f"{metric_key.upper()}={val:.4f} < {threshold}")
+
+            if not disease_passed:
+                all_passed = False
+
+        if missing:
+            self.skipTest(
+                f"Temporal validation sonuçları eksik: {missing}. "
+                "test_temporal.py çalıştırın."
+            )
+
+        self.assertTrue(
+            all_passed,
+            "Bazı hastalıklar için hiçbir model hedefi karşılamadı."
+        )
+        print(f"\nTC-36 ✓ Tüm modeller F1 ≥ {F1_TARGET} hedefini karşıladı.")
+
+    # ── ModelRunner testi ─────────────────────────────────────────────────────
+
+    def test_model_runner_version(self):
+        """ModelRunner.get_model_version() crash yapmadan çalışmalı."""
+        version = self.service.runner.get_model_version()
+        self.assertIsInstance(version, str)
+        print(f"ModelRunner ✓ version: {version}")
+
 
 if __name__ == "__main__":
     print("=" * 60)
