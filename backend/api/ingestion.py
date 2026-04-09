@@ -1,14 +1,26 @@
+import json
+import threading
+from collections import defaultdict
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 
-from backend.db.base import get_db
-from backend.db.models import VitalMeasurement, SignalStream
+from backend.db.base import get_db, SessionLocal
+from backend.db.models import VitalMeasurement, SignalStream, AIResult as AIResultModel
 from backend.db.enums import SignalType
 from backend.services.alert_service import AlertService
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
+
+# ── AI inference sayacı (hasta başına, her N ölçümde 1 inference) ────────────
+# Sepsis modeli 3600s (60dk) pencere → 1Hz HR+SpO2 + 0.5Hz RR = ~9000 ölçüm/saat
+# Her 300 ölçümde bir inference tetikle (~2 dakikada bir)
+AI_INFERENCE_EVERY = 300
+_patient_counters: dict[str, int] = defaultdict(int)
+_counter_lock = threading.Lock()
 
 
 class VitalPayload(BaseModel):
@@ -77,6 +89,15 @@ async def ingest_vital(
         for alert in triggered:
             background_tasks.add_task(_ws_notify_alert, alert)
 
+    # AI inference tetikleme — her N ölçümde bir
+    with _counter_lock:
+        _patient_counters[payload.patient_id] += 1
+        count = _patient_counters[payload.patient_id]
+    if count % AI_INFERENCE_EVERY == 0:
+        background_tasks.add_task(
+            _run_ai_inference, payload.patient_id
+        )
+
     return {
         "status":           "ok",
         "measurement_id":   measurement.measurement_id,
@@ -119,7 +140,94 @@ def resolve_alert(alert_id: str, db: Session = Depends(get_db)):
     return {"status": "resolved", "alert_id": alert.alert_id}
 
 
+# ── AI inference (background task) ───────────────────────────────────────────
+
+async def _run_ai_inference(patient_id: str) -> None:
+    """
+    DB'den son ölçümleri alıp AI inference çalıştırır.
+    Sonucu ai_results tablosuna + WebSocket'e yazar.
+    Async fonksiyon — BackgroundTasks event loop'da çalıştırır.
+    """
+    try:
+        from ai_module.inference_controller import get_service
+        from ai_module.inference_service import VitalMeasurement as AIVital
+
+        db = SessionLocal()
+        try:
+            # En büyük pencere sepsis=3600s → 1Hz sinyallerle ~9000 ölçüm
+            # Yeterli veri için son 10000 ölçümü çek
+            recent = (
+                db.query(VitalMeasurement)
+                .filter(
+                    VitalMeasurement.patient_id == patient_id,
+                    VitalMeasurement.is_valid == True,
+                )
+                .order_by(desc(VitalMeasurement.timestamp))
+                .limit(10000)
+                .all()
+            )
+
+            if len(recent) < 100:
+                return
+
+            measurements = [
+                AIVital(
+                    patientId=m.patient_id,
+                    timestamp_sec=m.timestamp_sec,
+                    signalType=m.signal_type,
+                    value=m.value,
+                    gestationalAgeWeeks=m.gestational_age_weeks or 30,
+                    postnatalAgeDays=m.postnatal_age_days or 14,
+                    pma_weeks=m.pma_weeks or 32.0,
+                )
+                for m in recent
+            ]
+
+            service = get_service()
+            result = service.runInference(patient_id, measurements)
+
+            ai_record = AIResultModel(
+                result_id=result.resultId,
+                patient_id=result.patientId,
+                timestamp=result.timeStamp,
+                risk_score=result.riskScore,
+                risk_level=result.riskLevel,
+                sepsis_score=result.sepsis_score,
+                apnea_score=result.apnea_score,
+                cardiac_score=result.cardiac_score,
+                sepsis_label=result.sepsis_label,
+                apnea_label=result.apnea_label,
+                cardiac_label=result.cardiac_label,
+                model_used=service.runner.get_model_version(),
+                shap_values_json=json.dumps(result.shap_top3),
+            )
+            db.add(ai_record)
+            db.commit()
+
+            # WebSocket push — AI sonucunu frontend'e bildir
+            await _ws_notify_ai_result(patient_id, result.to_dict())
+
+            print(f"[AI] {patient_id[:8]}: {result.getFormattedResult()}")
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        import traceback
+        print(f"[AI] Inference hatası ({patient_id[:8]}): {e}")
+        traceback.print_exc()
+
+
 # ── WebSocket yardımcı fonksiyonları ─────────────────────────────────────────
+
+async def _ws_notify_ai_result(patient_id: str, result_data: dict) -> None:
+    try:
+        from backend.api.websocket_manager import manager
+        data = {"type": "ai_result", "patient_id": patient_id, "data": result_data}
+        await manager.broadcast_vital(patient_id, data)
+    except Exception:
+        pass
+
 
 async def _ws_notify_vital(measurement) -> None:
     try:

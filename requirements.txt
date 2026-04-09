@@ -9,5 +9,6 @@ scipy
 neurokit2
 pywavelets
 websockets
-python-multipartr
+python-multipart
 reportlab
+aiohttp

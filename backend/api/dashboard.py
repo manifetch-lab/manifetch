@@ -56,6 +56,12 @@ class AIResultDTO(BaseModel):
     timestamp:        datetime
     risk_score:       float
     risk_level:       str
+    sepsis_score:     Optional[float] = None
+    apnea_score:      Optional[float] = None
+    cardiac_score:    Optional[float] = None
+    sepsis_label:     Optional[int]   = None
+    apnea_label:      Optional[int]   = None
+    cardiac_label:    Optional[int]   = None
     model_used:       str
     shap_values_json: Optional[str]
     class Config:
@@ -268,6 +274,12 @@ def get_ai_results(
             timestamp        = r.timestamp,
             risk_score       = r.risk_score,
             risk_level       = r.risk_level,
+            sepsis_score     = r.sepsis_score,
+            apnea_score      = r.apnea_score,
+            cardiac_score    = r.cardiac_score,
+            sepsis_label     = r.sepsis_label,
+            apnea_label      = r.apnea_label,
+            cardiac_label    = r.cardiac_label,
             model_used       = r.model_used,
             shap_values_json = r.shap_values_json,
         )

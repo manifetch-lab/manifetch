@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
@@ -13,7 +13,8 @@ export default function PatientDetailPage() {
   const { patientId } = useParams();
   const [patient,  setPatient]  = useState(null);
   const [alerts,   setAlerts]   = useState([]);
-  const [tab,      setTab]      = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [tab,      setTab]      = useState(() => parseInt(searchParams.get('tab') || '0', 10));
   const [loading,  setLoading]  = useState(true);
   const { user }   = useAuth();
   const { t }      = useLang();
@@ -100,7 +101,7 @@ export default function PatientDetailPage() {
 
         <div className="tabs">
           {TABS.map((tabName, i) => (
-            <button key={tabName} className={`tab ${tab === i ? 'active' : ''}`} onClick={() => setTab(i)}>
+            <button key={tabName} className={`tab ${tab === i ? 'active' : ''}`} onClick={() => { setTab(i); setSearchParams({ tab: i }); }}>
               {tabName}
             </button>
           ))}

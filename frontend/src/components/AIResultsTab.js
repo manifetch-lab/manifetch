@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 
 export default function AIResultsTab({ patientId }) {
   const [results,  setResults]  = useState([]);
   const [loading,  setLoading]  = useState(true);
+  const wsRef = useRef(null);
   const { t } = useLang();
 
   const load = () => {
@@ -16,6 +17,22 @@ export default function AIResultsTab({ patientId }) {
   };
 
   useEffect(load, [patientId]);
+
+  // WebSocket: AI sonucu gelince otomatik guncelle
+  useEffect(() => {
+    const ws = new WebSocket(`ws://127.0.0.1:8000/ws/vitals/${patientId}`);
+    wsRef.current = ws;
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'ai_result' && msg.patient_id === patientId) {
+        load();
+      }
+    };
+    const ping = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    }, 25000);
+    return () => { clearInterval(ping); ws.close(); };
+  }, [patientId]);
 
   const latest = results[0];
   const riskColor = (level) => {

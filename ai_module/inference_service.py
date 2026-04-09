@@ -283,10 +283,18 @@ class InferenceService:
         if not measurements:
             raise ValueError("Ölçüm listesi boş.")
 
-        hr_vals   = [m.value for m in measurements if m.signalType == "HEART_RATE"]
-        spo2_vals = [m.value for m in measurements if m.signalType == "SPO2"]
-        rr_vals   = [m.value for m in measurements if m.signalType == "RESP_RATE"]
-        ecg_vals  = [m.value for m in measurements if m.signalType == "ECG"]
+        # Hastalığa göre pencere boyutunu uygula
+        window_sec = DISEASE_CONFIGS.get(disease, {}).get("window_sec", 3600)
+        max_ts = max(m.timestamp_sec for m in measurements)
+        cutoff = max_ts - window_sec
+        windowed = [m for m in measurements if m.timestamp_sec >= cutoff]
+        if not windowed:
+            windowed = measurements  # fallback: pencere boşsa tüm veriyi kullan
+
+        hr_vals   = [m.value for m in windowed if m.signalType == "HEART_RATE"]
+        spo2_vals = [m.value for m in windowed if m.signalType == "SPO2"]
+        rr_vals   = [m.value for m in windowed if m.signalType == "RESP_RATE"]
+        ecg_vals  = [m.value for m in windowed if m.signalType == "ECG"]
 
         if not hr_vals:
             raise ValueError("HR verisi zorunludur.")
@@ -335,9 +343,9 @@ class InferenceService:
         hr_mean              = feats.get("hr_mean", 0.0) or 0.0
         feats["hr_rr_ratio"] = float(hr_mean / max(rr_mean, 1.0)) if rr_mean > 0 else np.nan
 
-        feats["ga_weeks"]  = float(measurements[0].gestationalAgeWeeks)
-        feats["pna_days"]  = float(measurements[0].postnatalAgeDays)
-        feats["pma_weeks"] = float(measurements[0].pma_weeks)
+        feats["ga_weeks"]  = float(windowed[0].gestationalAgeWeeks)
+        feats["pna_days"]  = float(windowed[0].postnatalAgeDays)
+        feats["pma_weeks"] = float(windowed[0].pma_weeks)
 
         if ecg_vals:
             feats.update(extract_ecg_beat_features(np.array(ecg_vals)))

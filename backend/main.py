@@ -7,6 +7,7 @@ from backend.api.dashboard import router as dashboard_router
 from backend.api.patients import router as patients_router
 from backend.api.websocket_manager import router as ws_router
 from backend.api.admin import router as admin_router
+from ai_module.inference_controller import router as ai_router
 from fastapi.middleware.cors import CORSMiddleware
 
 
@@ -32,6 +33,7 @@ app.include_router(dashboard_router)
 app.include_router(patients_router)
 app.include_router(ws_router)
 app.include_router(admin_router)
+app.include_router(ai_router)
 
 @app.get("/")
 def root():
