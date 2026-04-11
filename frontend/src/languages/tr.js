@@ -94,6 +94,7 @@ const tr = {
     highDesc: "AI modeli hastanın vital bulgularında endişe verici bir patern tespit etti. Acil klinik değerlendirme önerilir.",
     mediumDesc: "AI modeli bazı anormal paternler tespit etti. Yakın izlem önerilir.",
     lowDesc: "Vital bulgular kabul edilebilir sınırlar içinde. Rutin izleme devam etsin.",
+    diseaseScores: "Hastalık Risk Skorları",
   },
 
   // Trend Analysis
@@ -104,6 +105,7 @@ const tr = {
     last7d: "Son 7 Gün",
     heartRateTrend: "Kalp Atışı Trendi",
     spo2Trend: "SpO₂ Trendi",
+    respRateTrend: "Solunum Hızı Trendi",
     noData: "Veri yok",
     summary: "Özet İstatistikler",
     avg: "Ort",
@@ -151,6 +153,7 @@ const tr = {
   admin: {
     title: "Yönetim Paneli",
     userManagement: "Kullanıcı Yönetimi",
+    simulationManagement: "Simülasyon Yönetimi",
     systemSettings: "Sistem Ayarları",
     auditLogs: "Denetim Kayıtları",
     dbBackup: "Veritabanı Yedekleme",

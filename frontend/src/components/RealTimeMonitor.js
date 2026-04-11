@@ -1,44 +1,97 @@
 import { useState, useEffect, useRef } from 'react';
-import { api } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
+import { api } from '../api/client';
+import ECGCanvas from './ECGCanvas';
 
-export default function RealTimeMonitor({ patientId, alerts, setAlerts }) {
-  const [vitals,  setVitals]  = useState({ HEART_RATE: null, SPO2: null, RESP_RATE: null });
-  const [wsState, setWsState] = useState('connecting');
+const WS_BASE = process.env.REACT_APP_WS_URL || 'ws://127.0.0.1:8000';
+
+const GA_THRESHOLDS = {
+  '24-29': { HEART_RATE: { min: 120, max: 177 }, SPO2: { min: 88, max: 98 }, RESP_RATE: { min: 30, max: 75 } },
+  '29-33': { HEART_RATE: { min: 122, max: 175 }, SPO2: { min: 89, max: 98 }, RESP_RATE: { min: 30, max: 70 } },
+  '33-37': { HEART_RATE: { min: 115, max: 172 }, SPO2: { min: 90, max: 99 }, RESP_RATE: { min: 30, max: 68 } },
+  '37-43': { HEART_RATE: { min: 100, max: 160 }, SPO2: { min: 92, max: 100 }, RESP_RATE: { min: 30, max: 65 } },
+};
+
+function getGaThreshold(ga, signalType) {
+  if (!ga) return null;
+  const key = ga < 29 ? '24-29' : ga < 33 ? '29-33' : ga < 37 ? '33-37' : '37-43';
+  return GA_THRESHOLDS[key]?.[signalType] || null;
+}
+
+export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts }) {
+  const [vitals,     setVitals]     = useState({ HEART_RATE: null, SPO2: null, RESP_RATE: null });
+  const [wsState,    setWsState]    = useState('connecting');
+  const [thresholds, setThresholds] = useState({});
   const wsRef = useRef(null);
   const { user } = useAuth();
   const { t }    = useLang();
   const canAck   = ['DOCTOR', 'NURSE'].includes(user?.role);
 
   useEffect(() => {
-    const ws = new WebSocket(`ws://127.0.0.1:8000/ws/vitals/${patientId}`);
-    wsRef.current = ws;
-    ws.onopen  = () => setWsState('connected');
-    ws.onclose = () => setWsState('disconnected');
-    ws.onerror = () => setWsState('error');
-    ws.onmessage = (e) => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'vital') {
-        setVitals(prev => ({ ...prev, [msg.signal_type]: msg.value }));
-      }
-      if (msg.type === 'alert') {
-        setAlerts(prev => {
-          const exists = prev.find(a => a.alert_id === msg.data.alert_id);
-          return exists ? prev : [msg.data, ...prev];
-        });
-      }
+    if (!patient?.gestational_age_weeks) return;
+    const ga = patient.gestational_age_weeks;
+    const fallback = {
+      HEART_RATE: getGaThreshold(ga, 'HEART_RATE') || { min: 100, max: 180 },
+      SPO2:       getGaThreshold(ga, 'SPO2')       || { min: 88,  max: 100 },
+      RESP_RATE:  getGaThreshold(ga, 'RESP_RATE')  || { min: 30,  max: 70  },
     };
+    setThresholds(fallback);
+  }, [patient]);
+
+  // WebSocket — sadece vitals
+  useEffect(() => {
+    let cancelled = false;
+
+    const connect = () => {
+      const token = sessionStorage.getItem('token');
+      if (!token || cancelled) return;
+
+      const ws = new WebSocket(`${WS_BASE}/ws/vitals/${patientId}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ token }));
+        setWsState('connected');
+      };
+
+      ws.onclose = () => {
+        setWsState('disconnected');
+        if (!cancelled) setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => setWsState('error');
+
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'vital') {
+          setVitals(prev => ({ ...prev, [msg.signal_type]: msg.value }));
+        }
+      };
+    };
+
+    setWsState('connecting');
+    connect();
+
     const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }));
+      }
     }, 25000);
-    return () => { clearInterval(ping); ws.close(); };
+
+    return () => {
+      cancelled = true;
+      clearInterval(ping);
+      wsRef.current?.close();
+    };
   }, [patientId]);
 
   const handleAck = async (alertId) => {
     try {
       await api.acknowledgeAlert(alertId);
-      setAlerts(prev => prev.map(a => a.alert_id === alertId ? { ...a, status: 'ACKNOWLEDGED' } : a));
+      setAlerts(prev => prev.map(a =>
+        a.alert_id === alertId ? { ...a, status: 'ACKNOWLEDGED' } : a
+      ));
     } catch (err) { console.error(err); }
   };
 
@@ -50,18 +103,19 @@ export default function RealTimeMonitor({ patientId, alerts, setAlerts }) {
   };
 
   const VITALS_CONFIG = [
-    { key: 'HEART_RATE', label: t.monitor.heartRate, unit: 'bpm',  min: 100, max: 180 },
-    { key: 'SPO2',       label: t.monitor.spo2,       unit: '%',    min: 88,  max: 100 },
-    { key: 'RESP_RATE',  label: t.monitor.respRate,   unit: '/min', min: 30,  max: 70  },
+    { key: 'HEART_RATE', label: t.monitor.heartRate, unit: 'bpm'  },
+    { key: 'SPO2',       label: t.monitor.spo2,       unit: '%'    },
+    { key: 'RESP_RATE',  label: t.monitor.respRate,   unit: '/min' },
   ];
 
   const isAlert = (key, val) => {
     if (val === null) return false;
-    const cfg = VITALS_CONFIG.find(v => v.key === key);
-    return val < cfg.min || val > cfg.max;
+    const thr = thresholds[key];
+    if (!thr) return false;
+    return val < thr.min || val > thr.max;
   };
 
-  const wsLabel = wsState === 'connected' ? t.monitor.wsConnected
+  const wsLabel = wsState === 'connected'   ? t.monitor.wsConnected
     : wsState === 'connecting' ? t.monitor.wsConnecting
     : t.monitor.wsDisconnected;
 
@@ -69,8 +123,9 @@ export default function RealTimeMonitor({ patientId, alerts, setAlerts }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
         {VITALS_CONFIG.map(({ key, label, unit }) => {
-          const val = vitals[key];
+          const val      = vitals[key];
           const alerting = isAlert(key, val);
+          const thr      = thresholds[key];
           return (
             <div key={key} className={`vital-card ${alerting ? 'alert' : 'normal'}`}>
               <div className="vital-label">{label}</div>
@@ -78,20 +133,18 @@ export default function RealTimeMonitor({ patientId, alerts, setAlerts }) {
                 {val !== null ? val.toFixed(0) : '—'}
               </div>
               <div className="vital-unit">{unit}</div>
+              {thr && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {thr.min} – {thr.max} {unit}
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <p style={{ fontWeight: 600, marginBottom: 12, color: 'var(--navy)' }}>{t.monitor.ecgWaveform}</p>
-        <div style={{
-          height: 120, background: 'var(--bg)', borderRadius: 8,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic',
-        }}>
-          {t.monitor.ecgPlaceholder}
-        </div>
+        <ECGCanvas patientId={patientId} />
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
@@ -124,9 +177,13 @@ export default function RealTimeMonitor({ patientId, alerts, setAlerts }) {
                 {canAck && (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: 12 }}
-                      onClick={() => handleAck(alert.alert_id)}>{t.monitor.acknowledge}</button>
+                      onClick={() => handleAck(alert.alert_id)}>
+                      {t.monitor.acknowledge}
+                    </button>
                     <button className="btn btn-danger" style={{ padding: '4px 12px', fontSize: 12 }}
-                      onClick={() => handleResolve(alert.alert_id)}>{t.monitor.resolve}</button>
+                      onClick={() => handleResolve(alert.alert_id)}>
+                      {t.monitor.resolve}
+                    </button>
                   </div>
                 )}
               </div>

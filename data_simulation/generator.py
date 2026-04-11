@@ -690,50 +690,6 @@ def _generate_second(sec, start_time, config, baseline, pma_weeks,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLD: StreamPublisher sınıfı
-# ─────────────────────────────────────────────────────────────────────────────
-
-class StreamPublisher:
-    """
-    LLD: StreamPublisher
-    Methods: connect, publish, start, stop
-
-    Üretilen ölçümleri backend ingestion endpoint'ine HTTP ile gönderir.
-    Demo modunda dosyaya yazar.
-    """
-
-    def __init__(self, endpoint: str = "http://127.0.0.1:8000/ingest/vital"):
-        self.endpoint  = endpoint
-        self._running  = False
-        self._session  = None
-
-    def connect(self, endpoint: str):
-        self.endpoint = endpoint
-        print(f"[StreamPublisher] Endpoint: {self.endpoint}")
-
-    def publish(self, measurement: dict):
-        """Tek ölçümü backend'e gönderir."""
-        if self._session is None:
-            return
-        try:
-            self._session.post(self.endpoint, json=measurement, timeout=2)
-        except Exception as e:
-            print(f"[StreamPublisher] Gönderim hatası: {e}")
-
-    def start(self, config: ScenarioConfig, output_dir: str = None):
-        """
-        Simülasyonu başlatır.
-        output_dir verilirse HTTP yerine dosyaya yazar (offline mod).
-        """
-        self._running = True
-        print(f"[StreamPublisher] Simülasyon başlıyor: {config.patient_id[:8]}")
-
-    def stop(self):
-        self._running = False
-        print("[StreamPublisher] Simülasyon durduruldu.")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # HASTA ÜRETİCİ
 # ─────────────────────────────────────────────────────────────────────────────
 

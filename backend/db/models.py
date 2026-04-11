@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey,
     Integer, String, Index, SmallInteger
@@ -13,6 +13,11 @@ from backend.db.encryption import encrypt, decrypt
 
 def new_uuid() -> str:
     return str(uuid.uuid4())
+
+
+def utcnow() -> datetime:
+    """Timezone-aware UTC datetime. datetime.utcnow() Python 3.12'de deprecated."""
+    return datetime.now(timezone.utc)
 
 
 SIGNAL_UNITS = {
@@ -30,7 +35,7 @@ class Patient(Base):
     _full_name            = Column("full_name", String, nullable=False)
     gestational_age_weeks = Column(SmallInteger, nullable=False)
     postnatal_age_days    = Column(SmallInteger, nullable=False)
-    admission_date        = Column(DateTime(timezone=True), default=datetime.utcnow)
+    admission_date        = Column(DateTime(timezone=True), default=utcnow)
     is_active             = Column(Boolean, default=True, nullable=False)
 
     @property
@@ -54,7 +59,7 @@ class SignalStream(Base):
     stream_id  = Column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     patient_id = Column(UUID(as_uuid=False), ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False)
     is_active  = Column(Boolean, default=True, nullable=False)
-    started_at = Column(DateTime(timezone=True), default=datetime.utcnow)
+    started_at = Column(DateTime(timezone=True), default=utcnow)
     stopped_at = Column(DateTime(timezone=True), nullable=True)
 
     patient      = relationship("Patient",          back_populates="signal_streams")
@@ -73,6 +78,7 @@ class VitalMeasurement(Base):
     stream_id             = Column(UUID(as_uuid=False), ForeignKey("signal_streams.stream_id", ondelete="SET NULL"), nullable=True)
     signal_type           = Column(String(16), nullable=False)
     value                 = Column(Float, nullable=False)
+    unit                  = Column(String(16), nullable=False, default="")  # DB'de sakla, her sorgu dict lookup yapmasın
     timestamp             = Column(DateTime(timezone=True), nullable=False)
     timestamp_sec         = Column(Float, nullable=False)
     is_valid              = Column(Boolean, default=True)
@@ -84,11 +90,7 @@ class VitalMeasurement(Base):
     label_cardiac         = Column(SmallInteger, default=0)
     label_healthy         = Column(SmallInteger, default=0)
 
-    @property
-    def unit(self) -> str:
-        return SIGNAL_UNITS.get(self.signal_type, "")
-
-    patient = relationship("Patient",     back_populates="vital_measurements")
+    patient = relationship("Patient",      back_populates="vital_measurements")
     stream  = relationship("SignalStream", back_populates="measurements")
     alerts  = relationship("Alert",        back_populates="measurement")
 
@@ -110,8 +112,8 @@ class ThresholdRule(Base):
     enabled     = Column(Boolean, default=True, nullable=False)
     severity    = Column(String(16), default=Severity.MEDIUM.value, nullable=False)
 
-    patient = relationship("Patient", back_populates="threshold_rules")
-    alerts  = relationship("Alert",   back_populates="rule")
+    patient = relationship("Patient",     back_populates="threshold_rules")
+    alerts  = relationship("Alert",       back_populates="rule")
 
     __table_args__ = (
         Index("ix_threshold_patient_signal", "patient_id", "signal_type"),
@@ -122,13 +124,13 @@ class Alert(Base):
     __tablename__ = "alerts"
 
     alert_id        = Column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
-    patient_id      = Column(UUID(as_uuid=False), ForeignKey("patients.patient_id",          ondelete="CASCADE"),  nullable=False)
-    rule_id         = Column(UUID(as_uuid=False), ForeignKey("threshold_rules.rule_id",      ondelete="SET NULL"), nullable=True)
+    patient_id      = Column(UUID(as_uuid=False), ForeignKey("patients.patient_id",               ondelete="CASCADE"),  nullable=False)
+    rule_id         = Column(UUID(as_uuid=False), ForeignKey("threshold_rules.rule_id",           ondelete="SET NULL"), nullable=True)
     measurement_id  = Column(UUID(as_uuid=False), ForeignKey("vital_measurements.measurement_id", ondelete="SET NULL"), nullable=True)
-    acknowledged_by = Column(UUID(as_uuid=False), ForeignKey("users.user_id",                ondelete="SET NULL"), nullable=True)
+    acknowledged_by = Column(UUID(as_uuid=False), ForeignKey("users.user_id",                     ondelete="SET NULL"), nullable=True)
     status          = Column(String(16), default=AlertStatus.ACTIVE.value, nullable=False)
     severity        = Column(String(16), nullable=False)
-    created_at      = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at      = Column(DateTime(timezone=True), default=utcnow)
     acknowledged_at = Column(DateTime(timezone=True), nullable=True)
     resolved_at     = Column(DateTime(timezone=True), nullable=True)
 
@@ -149,9 +151,18 @@ class AIResult(Base):
     result_id        = Column(UUID(as_uuid=False), primary_key=True, default=new_uuid)
     patient_id       = Column(UUID(as_uuid=False), ForeignKey("patients.patient_id", ondelete="CASCADE"), nullable=False)
     timestamp        = Column(DateTime(timezone=True), nullable=False)
-    risk_score       = Column(Float, nullable=False)
+    risk_score       = Column(Float, nullable=False)   # max(sepsis, apnea, cardiac)
     risk_level       = Column(String(16), nullable=False)
-    model_used       = Column(String(32), default=ModelType.RANDOM_FOREST.value, nullable=False)
+
+    # Multi-label skorlar — inference_service.py ile tam uyumlu
+    sepsis_score     = Column(Float, nullable=False, default=0.0)
+    apnea_score      = Column(Float, nullable=False, default=0.0)
+    cardiac_score    = Column(Float, nullable=False, default=0.0)
+    sepsis_label     = Column(SmallInteger, nullable=False, default=0)
+    apnea_label      = Column(SmallInteger, nullable=False, default=0)
+    cardiac_label    = Column(SmallInteger, nullable=False, default=0)
+
+    model_used       = Column(String(32), default=ModelType.LIGHTGBM.value, nullable=False)
     shap_values_json = Column(String, nullable=True)
 
     patient = relationship("Patient", back_populates="ai_results")
@@ -169,7 +180,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     role          = Column(String(16), default=Role.NURSE.value, nullable=False)
     is_active     = Column(Boolean, default=True, nullable=False)
-    created_at    = Column(DateTime(timezone=True), default=datetime.utcnow)
+    created_at    = Column(DateTime(timezone=True), default=utcnow)
     _display_name = Column("display_name", String, nullable=False)
 
     @property

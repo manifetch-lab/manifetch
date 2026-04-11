@@ -5,15 +5,24 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
 
-DB_USER     = os.getenv("DB_USER", "postgres")
+DB_USER     = os.getenv("DB_USER",     "postgres")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "")
-DB_HOST     = os.getenv("DB_HOST", "localhost")
-DB_PORT     = os.getenv("DB_PORT", "5432")
-DB_NAME     = os.getenv("DB_NAME", "manifetch")
+DB_HOST     = os.getenv("DB_HOST",     "localhost")
+DB_PORT     = os.getenv("DB_PORT",     "5432")
+DB_NAME     = os.getenv("DB_NAME",     "manifetch")
 
-DATABASE_URL = (
-    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+# Önce DATABASE_URL env variable'ına bak, yoksa parçalardan oluştur
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
 )
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "Veritabanı bağlantısı tanımlanmamış. "
+        "DATABASE_URL veya DB_USER/DB_PASSWORD/DB_HOST/DB_PORT/DB_NAME "
+        "environment variable'larını ayarlayın."
+    )
 
 engine = create_engine(
     DATABASE_URL,

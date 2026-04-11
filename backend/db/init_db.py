@@ -1,6 +1,5 @@
 from backend.db.base import engine, Base
 from backend.db import models  # noqa: F401
-from backend.db.seed import main as seed_vitals
 from backend.db.threshold_seeder import seed_thresholds
 from backend.db.user_seeder import seed_users
 
@@ -13,10 +12,6 @@ def init_db():
 
     print("=== Kullanici Seed ===")
     seed_users()
-    print()
-    
-    print("=== Vital Measurements Seed ===")
-    seed_vitals()
     print()
 
     print("=== Threshold Seed ===")

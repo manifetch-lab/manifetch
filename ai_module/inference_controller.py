@@ -118,7 +118,7 @@ async def infer(
                 sepsis_label     = result.sepsis_label,
                 apnea_label      = result.apnea_label,
                 cardiac_label    = result.cardiac_label,
-                model_used       = service.runner.get_model_version(),
+                model_used       = str(service.runner.get_model_version())[:32],
                 shap_values_json = json.dumps(result.shap_top3),
             )
             db.add(ai_record)

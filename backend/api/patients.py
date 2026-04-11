@@ -76,9 +76,9 @@ def _create_default_thresholds(db: Session, patient_id: str,
 
     # GA bazlı eşikler
     if ga_weeks < 28:
-        hr_min, hr_max     = 100, 200
-        spo2_min, spo2_max = 85, 98
-        rr_min, rr_max     = 20, 80
+        hr_min, hr_max     = 120, 177
+        spo2_min, spo2_max = 88, 98
+        rr_min, rr_max     = 30, 75
     elif ga_weeks < 32:
         hr_min, hr_max     = 100, 190
         spo2_min, spo2_max = 87, 98
@@ -127,11 +127,11 @@ def create_patient(
 
     # Duplikat kontrol — aynı isim ve GA
     existing = db.query(Patient).filter(
+        Patient.gestational_age_weeks == payload.gestational_age_weeks,
         Patient.is_active == True,
     ).all()
     for p in existing:
-        if (p.full_name == payload.full_name and
-                p.gestational_age_weeks == payload.gestational_age_weeks):
+        if p.full_name == payload.full_name:
             raise HTTPException(
                 status_code=409,
                 detail="Aynı isim ve gestasyonel yaşa sahip aktif hasta zaten mevcut."

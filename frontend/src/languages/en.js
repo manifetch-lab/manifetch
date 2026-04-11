@@ -94,6 +94,7 @@ const en = {
     highDesc: "The AI model has identified a concerning pattern in the patient's vital signs. Immediate clinical assessment is recommended.",
     mediumDesc: "The AI model has detected some abnormal patterns. Close monitoring is advised.",
     lowDesc: "Vital signs are within acceptable ranges. Continue routine monitoring.",
+    diseaseScores: "Disease Risk Scores",
   },
 
   // Trend Analysis
@@ -104,6 +105,7 @@ const en = {
     last7d: "Last 7 Days",
     heartRateTrend: "Heart Rate Trend",
     spo2Trend: "SpO₂ Trend",
+    respRateTrend: "Respiration Rate Trend",
     noData: "No data available",
     summary: "Summary Statistics",
     avg: "Avg",
@@ -151,6 +153,7 @@ const en = {
   admin: {
     title: "Administration Panel",
     userManagement: "User Management",
+    simulationManagement: "Simulation Management",
     systemSettings: "System Settings",
     auditLogs: "Audit Logs",
     dbBackup: "Database Backup",

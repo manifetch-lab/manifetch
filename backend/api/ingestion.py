@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -7,8 +7,18 @@ from backend.db.base import get_db
 from backend.db.models import VitalMeasurement, SignalStream
 from backend.db.enums import SignalType
 from backend.services.alert_service import AlertService
+from backend.api.auth import require_any_role, require_nurse, get_current_user
+from backend.db.models import User
 
 router = APIRouter(prefix="/ingest", tags=["ingestion"])
+
+# Signal type → unit eşlemesi
+SIGNAL_UNITS = {
+    SignalType.HEART_RATE.value: "BPM",
+    SignalType.SPO2.value:       "%",
+    SignalType.RESP_RATE.value:  "breaths/min",
+    SignalType.ECG.value:        "mV",
+}
 
 
 class VitalPayload(BaseModel):
@@ -30,19 +40,27 @@ class VitalPayload(BaseModel):
     label_healthy:         int = 0
 
 
+# DÜZELTME: /vital endpoint'ine auth eklendi — daha önce tamamen açıktı
 @router.post("/vital")
 async def ingest_vital(
     payload:          VitalPayload,
     background_tasks: BackgroundTasks,
     db:               Session = Depends(get_db),
+    current_user:     User    = Depends(require_any_role),
 ):
+    """
+    Simülasyon katmanından gelen ölçümü alır.
+    Tüm roller okuyabilir; kimlik doğrulaması zorunlu.
+    """
     if payload.stream_id:
         stream = db.query(SignalStream).filter(
             SignalStream.stream_id == payload.stream_id,
             SignalStream.is_active == True,
         ).first()
         if not stream:
-            raise HTTPException(status_code=404, detail="Stream bulunamadi veya aktif degil.")
+            raise HTTPException(status_code=404, detail="Stream bulunamadı veya aktif değil.")
+
+    unit = SIGNAL_UNITS.get(payload.signal_type.value, payload.unit)
 
     measurement = VitalMeasurement(
         measurement_id        = payload.measurement_id,
@@ -50,6 +68,7 @@ async def ingest_vital(
         stream_id             = payload.stream_id,
         signal_type           = payload.signal_type.value,
         value                 = payload.value,
+        unit                  = unit,
         timestamp             = payload.timestamp,
         timestamp_sec         = payload.timestamp_sec,
         is_valid              = payload.is_valid,
@@ -65,7 +84,8 @@ async def ingest_vital(
     db.add(measurement)
     db.flush()
 
-    # Threshold değerlendirme ve alert oluşturma
+    # DÜZELTME: AlertService artık kendi commit etmiyor —
+    # transaction yönetimi burada, tek commit noktası aşağıdaki db.commit()
     alert_service = AlertService(db)
     triggered     = alert_service.process_measurement(measurement)
 
@@ -86,7 +106,12 @@ async def ingest_vital(
 
 
 @router.get("/patients/{patient_id}/alerts")
-def get_active_alerts(patient_id: str, db: Session = Depends(get_db)):
+def get_active_alerts(
+    patient_id:   str,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(require_any_role),
+):
+    """Hasta için aktif alert listesi."""
     alert_service = AlertService(db)
     alerts        = alert_service.get_active_alerts(patient_id)
     return [
@@ -101,21 +126,34 @@ def get_active_alerts(patient_id: str, db: Session = Depends(get_db)):
     ]
 
 
+# DÜZELTME: acknowledge artık current_user'dan user_id alıyor — query param yok
 @router.patch("/alerts/{alert_id}/acknowledge")
-def acknowledge_alert(alert_id: str, user_id: str, db: Session = Depends(get_db)):
+def acknowledge_alert(
+    alert_id:     str,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(require_nurse),
+):
+    """Alert'i onayla — NURSE veya DOCTOR yetkisi gerekli."""
     alert_service = AlertService(db)
-    alert         = alert_service.acknowledge(alert_id, user_id)
+    alert         = alert_service.acknowledge(alert_id, current_user.user_id)
     if not alert:
-        raise HTTPException(status_code=404, detail="Alert bulunamadi.")
+        raise HTTPException(status_code=404, detail="Alert bulunamadı.")
     return {"status": "acknowledged", "alert_id": alert.alert_id}
 
 
 @router.patch("/alerts/{alert_id}/resolve")
-def resolve_alert(alert_id: str, db: Session = Depends(get_db)):
+def resolve_alert(
+    alert_id:     str,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(require_nurse),
+):
     alert_service = AlertService(db)
-    alert         = alert_service.resolve(alert_id)
+    try:
+        alert = alert_service.resolve(alert_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     if not alert:
-        raise HTTPException(status_code=404, detail="Alert bulunamadi.")
+        raise HTTPException(status_code=404, detail="Alert bulunamadı.")
     return {"status": "resolved", "alert_id": alert.alert_id}
 
 
@@ -133,5 +171,31 @@ async def _ws_notify_alert(alert) -> None:
     try:
         from backend.api.websocket_manager import notify_alert
         await notify_alert(alert)
+    except Exception as e:
+        print(f"[WS Alert Error] {e}")
+
+
+class ECGPayload(BaseModel):
+    patient_id: str
+    samples:    list[float]
+    timestamp:  str
+    fs:         int = 25
+
+
+@router.post("/ecg")
+async def ingest_ecg(
+    payload:          ECGPayload,
+    background_tasks: BackgroundTasks,
+    current_user:     User = Depends(require_any_role),
+):
+    """ECG sample batch'ini alır ve WebSocket üzerinden frontend'e iletir."""
+    background_tasks.add_task(_ws_notify_ecg, payload.patient_id, payload.samples)
+    return {"status": "ok", "samples": len(payload.samples)}
+
+
+async def _ws_notify_ecg(patient_id: str, samples: list) -> None:
+    try:
+        from backend.api.websocket_manager import notify_ecg
+        await notify_ecg(patient_id, samples)
     except Exception:
         pass

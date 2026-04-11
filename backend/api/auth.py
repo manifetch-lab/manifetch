@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -17,9 +17,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Konfigürasyon ─────────────────────────────────────────────────────────────
-SECRET_KEY    = os.getenv("MANIFETCH_SECRET_KEY", "fallback_secret_key_change_in_prod")
-ALGORITHM     = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 saat
+# DÜZELTME: JWT için ayrı env variable — encryption.py'deki AES key'inden bağımsız
+SECRET_KEY = os.getenv("MANIFETCH_JWT_SECRET")
+if not SECRET_KEY:
+    raise ValueError(
+        "MANIFETCH_JWT_SECRET environment variable ayarlanmamış. "
+        ".env dosyasına ekleyin."
+    )
+
+ALGORITHM  = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES  = 480   # 8 saat
+REFRESH_TOKEN_EXPIRE_MINUTES = 10080 # 7 gün
 
 pwd_context   = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -29,11 +37,16 @@ router        = APIRouter(prefix="/auth", tags=["auth"])
 # ── Pydantic Modelleri ────────────────────────────────────────────────────────
 
 class Token(BaseModel):
-    access_token: str
-    token_type:   str
-    role:         str
-    display_name: str
-    user_id:      str
+    access_token:  str
+    refresh_token: str
+    token_type:    str
+    role:          str
+    display_name:  str
+    user_id:       str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 
 class TokenData(BaseModel):
@@ -62,8 +75,17 @@ def get_password_hash(password: str) -> str:
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
-    expire    = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    expire    = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    )
+    to_encode.update({"exp": expire, "type": "access"})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def create_refresh_token(data: dict) -> str:
+    to_encode = data.copy()
+    expire    = datetime.now(timezone.utc) + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire, "type": "refresh"})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -81,7 +103,7 @@ def authenticate_user(db: Session, username: str, password: str) -> Optional[Use
 # ── Token Doğrulama ───────────────────────────────────────────────────────────
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme),
+    token: str     = Depends(oauth2_scheme),
     db:    Session = Depends(get_db),
 ) -> User:
     credentials_exception = HTTPException(
@@ -91,7 +113,10 @@ def get_current_user(
     )
     try:
         payload   = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id   = payload.get("sub")
+        # Refresh token'ın access token olarak kullanılmasını engelle
+        if payload.get("type") != "access":
+            raise credentials_exception
+        user_id = payload.get("sub")
         if user_id is None:
             raise credentials_exception
     except JWTError:
@@ -101,6 +126,23 @@ def get_current_user(
     if user is None or not user.is_active:
         raise credentials_exception
     return user
+
+
+def verify_ws_token(token: str, db: Session) -> Optional[User]:
+    """WebSocket bağlantıları için token doğrulama (exception yerine None döner)."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "access":
+            return None
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+        user = db.query(User).filter(User.user_id == user_id).first()
+        if user and user.is_active:
+            return user
+        return None
+    except JWTError:
+        return None
 
 
 # ── RBAC Dependency'leri ──────────────────────────────────────────────────────
@@ -160,18 +202,60 @@ def login(
             detail="Hesap aktif değil.",
         )
 
-    token = create_access_token(data={
+    token_data = {
         "sub":      user.user_id,
         "username": user.username,
         "role":     user.role,
-    })
+    }
 
     return Token(
-        access_token = token,
-        token_type   = "bearer",
-        role         = user.role,
-        display_name = user.display_name,
-        user_id      = user.user_id,
+        access_token  = create_access_token(token_data),
+        refresh_token = create_refresh_token(token_data),
+        token_type    = "bearer",
+        role          = user.role,
+        display_name  = user.display_name,
+        user_id       = user.user_id,
+    )
+
+
+@router.post("/refresh", response_model=Token)
+def refresh_token(
+    body: RefreshRequest,
+    db:   Session = Depends(get_db),
+):
+    """Refresh token ile yeni access token üret."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Geçersiz ya da süresi dolmuş refresh token.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(body.refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            raise credentials_exception
+        user_id = payload.get("sub")
+        if not user_id:
+            raise credentials_exception
+    except JWTError:
+        raise credentials_exception
+
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user or not user.is_active:
+        raise credentials_exception
+
+    token_data = {
+        "sub":      user.user_id,
+        "username": user.username,
+        "role":     user.role,
+    }
+
+    return Token(
+        access_token  = create_access_token(token_data),
+        refresh_token = create_refresh_token(token_data),
+        token_type    = "bearer",
+        role          = user.role,
+        display_name  = user.display_name,
+        user_id       = user.user_id,
     )
 
 

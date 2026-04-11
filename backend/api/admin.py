@@ -1,10 +1,5 @@
-"""
-Manifetch NICU — Admin API
-===========================
-Kullanıcı yönetimi endpoint'leri — sadece ADMINISTRATOR rolü erişebilir.
-"""
-
 import uuid
+from datetime import timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -16,7 +11,7 @@ from backend.db.models import User
 from backend.db.enums import Role
 from backend.api.auth import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router      = APIRouter(prefix="/admin", tags=["admin"])
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
@@ -27,6 +22,7 @@ class UserCreateDTO(BaseModel):
     display_name: str
 
 
+# DÜZELTME: UserUpdateDTO artık gerçek bir PATCH endpoint'e sahip
 class UserUpdateDTO(BaseModel):
     display_name: Optional[str] = None
     role:         Optional[str] = None
@@ -45,7 +41,6 @@ def get_users(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_admin),
 ):
-    """Tüm kullanıcıları listele — sadece ADMINISTRATOR."""
     users = db.query(User).all()
     return [
         UserResponseDTO(
@@ -65,7 +60,6 @@ def create_user(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_admin),
 ):
-    """Yeni kullanıcı oluştur."""
     if payload.role not in [r.value for r in Role]:
         raise HTTPException(status_code=400, detail=f"Geçersiz rol: {payload.role}")
 
@@ -80,10 +74,41 @@ def create_user(
         role          = payload.role,
         is_active     = True,
     )
-    user.display_name = payload.display_name
+    user.display_name = payload.display_name   # setter → şifreli
     db.add(user)
     db.commit()
 
+    return UserResponseDTO(
+        user_id      = user.user_id,
+        username     = user.username,
+        role         = user.role,
+        display_name = user.display_name,
+        is_active    = user.is_active,
+    )
+
+
+# DÜZELTME: UserUpdateDTO için endpoint eklendi — daha önce dead code'du
+@router.patch("/users/{user_id}", response_model=UserResponseDTO)
+def update_user(
+    user_id:      str,
+    payload:      UserUpdateDTO,
+    db:           Session = Depends(get_db),
+    current_user: User    = Depends(require_admin),
+):
+    """Kullanıcı bilgilerini güncelle — sadece ADMINISTRATOR."""
+    user = db.query(User).filter(User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
+
+    if payload.display_name is not None:
+        user.display_name = payload.display_name  # setter → şifreli
+
+    if payload.role is not None:
+        if payload.role not in [r.value for r in Role]:
+            raise HTTPException(status_code=400, detail=f"Geçersiz rol: {payload.role}")
+        user.role = payload.role
+
+    db.commit()
     return UserResponseDTO(
         user_id      = user.user_id,
         username     = user.username,
@@ -99,7 +124,6 @@ def deactivate_user(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_admin),
 ):
-    """Kullanıcıyı deaktif et."""
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
@@ -116,7 +140,6 @@ def activate_user(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_admin),
 ):
-    """Kullanıcıyı aktif et."""
     user = db.query(User).filter(User.user_id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="Kullanıcı bulunamadı.")
