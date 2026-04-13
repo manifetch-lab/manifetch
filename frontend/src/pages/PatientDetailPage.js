@@ -81,7 +81,7 @@ export default function PatientDetailPage() {
   // Alert polling — sayfa düzeyinde, her 5 saniyede bir
   useEffect(() => {
     const pollAlerts = () => {
-      api.getAlerts(patientId, 'ACTIVE')
+      api.getAlerts(patientId)
         .then(r => {
           setAlerts(prev => {
             const prevIds = new Set(prev.map(a => a.alert_id));

@@ -39,7 +39,6 @@ export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts 
     setThresholds(fallback);
   }, [patient]);
 
-  // WebSocket — sadece vitals
   useEffect(() => {
     let cancelled = false;
 
@@ -119,6 +118,8 @@ export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts 
     : wsState === 'connecting' ? t.monitor.wsConnecting
     : t.monitor.wsDisconnected;
 
+  const visibleAlerts = alerts.filter(a => a.status === 'ACTIVE' || a.status === 'ACKNOWLEDGED');
+
   return (
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 20 }}>
@@ -155,35 +156,42 @@ export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts 
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{wsLabel}</span>
       </div>
 
-      {alerts.filter(a => a.status === 'ACTIVE').length > 0 && (
+      {visibleAlerts.length > 0 && (
         <div className="card">
           <p style={{ fontWeight: 600, marginBottom: 12, color: 'var(--navy)' }}>
-            {t.monitor.activeAlerts} ({alerts.filter(a => a.status === 'ACTIVE').length})
+            {t.monitor.activeAlerts} ({visibleAlerts.length})
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {alerts.filter(a => a.status === 'ACTIVE').map(alert => (
+            {visibleAlerts.map(alert => (
               <div key={alert.alert_id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '12px 16px', borderRadius: 8,
-                background: alert.severity === 'HIGH' ? 'var(--danger-bg)' : 'var(--warning-bg)',
-                borderLeft: `4px solid ${alert.severity === 'HIGH' ? 'var(--danger)' : 'var(--warning)'}`,
+                background: alert.status === 'ACKNOWLEDGED' ? 'var(--bg)' : alert.severity === 'HIGH' ? 'var(--danger-bg)' : 'var(--warning-bg)',
+                borderLeft: `4px solid ${alert.status === 'ACKNOWLEDGED' ? 'var(--border)' : alert.severity === 'HIGH' ? 'var(--danger)' : 'var(--warning)'}`,
               }}>
                 <div>
                   <span className={`badge badge-${alert.severity.toLowerCase()}`} style={{ marginRight: 10 }}>
                     {alert.severity}
                   </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>
+                    {alert.status}
+                  </span>
                   <span style={{ fontSize: 13 }}>{new Date(alert.created_at).toLocaleTimeString()}</span>
                 </div>
                 {canAck && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: 12 }}
-                      onClick={() => handleAck(alert.alert_id)}>
-                      {t.monitor.acknowledge}
-                    </button>
-                    <button className="btn btn-danger" style={{ padding: '4px 12px', fontSize: 12 }}
-                      onClick={() => handleResolve(alert.alert_id)}>
-                      {t.monitor.resolve}
-                    </button>
+                    {alert.status === 'ACTIVE' && (
+                      <button className="btn btn-outline" style={{ padding: '4px 12px', fontSize: 12 }}
+                        onClick={() => handleAck(alert.alert_id)}>
+                        {t.monitor.acknowledge}
+                      </button>
+                    )}
+                    {alert.status === 'ACKNOWLEDGED' && (
+                      <button className="btn btn-danger" style={{ padding: '4px 12px', fontSize: 12 }}
+                        onClick={() => handleResolve(alert.alert_id)}>
+                        {t.monitor.resolve}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

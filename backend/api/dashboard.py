@@ -187,7 +187,10 @@ def get_active_alerts(
     if status:
         query = query.filter(Alert.status == status)
     else:
-        query = query.filter(Alert.status == AlertStatus.ACTIVE.value)
+        query = query.filter(Alert.status.in_([
+            AlertStatus.ACTIVE.value,
+            AlertStatus.ACKNOWLEDGED.value,
+        ]))
     alerts = query.order_by(desc(Alert.created_at)).limit(limit).all()
     return [
         AlertDTO(
