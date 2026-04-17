@@ -58,7 +58,6 @@ class VitalDTO(BaseModel):
 
 
 class AIResultDTO(BaseModel):
-    """DÜZELTME: Multi-label skorlar eklendi — inference_service.py ile tam uyumlu."""
     result_id:        str
     patient_id:       str
     timestamp:        datetime
@@ -86,15 +85,8 @@ class TrendPoint(BaseModel):
 # ── Yardımcı fonksiyonlar ─────────────────────────────────────────────────────
 
 def _compute_pna(patient) -> int:
-    """
-    DÜZELTME: Timezone-aware datetime karşılaştırması.
-    Eski halde replace(tzinfo=None) ile timezone bilgisi siliniyor,
-    naive/aware karışıklığı oluşuyordu.
-    Şimdi admission_date her zaman UTC aware olarak işleniyor.
-    """
     try:
         admission = patient.admission_date
-        # Eğer naive datetime geldiyse UTC kabul et
         if admission.tzinfo is None:
             admission = admission.replace(tzinfo=timezone.utc)
         days_since = (datetime.now(timezone.utc) - admission).days
@@ -104,13 +96,8 @@ def _compute_pna(patient) -> int:
 
 
 def _batch_alert_status(db: Session, patient_ids: list[str]) -> dict[str, str]:
-    """
-    DÜZELTME: N+1 sorunu giderildi.
-    Tüm hastaların aktif alert'lerini tek sorguda çek.
-    """
     if not patient_ids:
         return {}
-
     rows = (
         db.query(Alert.patient_id, Alert.severity)
         .filter(
@@ -119,16 +106,12 @@ def _batch_alert_status(db: Session, patient_ids: list[str]) -> dict[str, str]:
         )
         .all()
     )
-
-    severity_rank = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
     result: dict[str, str] = {pid: "STABLE" for pid in patient_ids}
-
     for patient_id, severity in rows:
         if severity in ("HIGH", "CRITICAL"):
             result[patient_id] = "CRITICAL"
         elif result[patient_id] != "CRITICAL":
             result[patient_id] = "MONITORING"
-
     return result
 
 
@@ -144,10 +127,8 @@ def get_patients(
     if active_only:
         query = query.filter(Patient.is_active == True)
     patients = query.order_by(desc(Patient.admission_date)).all()
-
     patient_ids  = [p.patient_id for p in patients]
     alert_status = _batch_alert_status(db, patient_ids)
-
     return [
         PatientDTO(
             patient_id            = p.patient_id,
@@ -239,15 +220,11 @@ def resolve_alert(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_nurse),
 ):
-    """DÜZELTME: ACTIVE alert doğrudan RESOLVED'a geçemez — lifecycle kontrolü."""
     alert = db.query(Alert).filter(Alert.alert_id == alert_id).first()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert bulunamadı.")
     if alert.status == AlertStatus.ACTIVE.value:
-        raise HTTPException(
-            status_code=400,
-            detail="Alert önce onaylanmalıdır (ACKNOWLEDGED → RESOLVED)."
-        )
+        raise HTTPException(status_code=400, detail="Alert önce onaylanmalıdır (ACKNOWLEDGED → RESOLVED).")
     if alert.status == AlertStatus.RESOLVED.value:
         return {"status": "already_resolved", "alert_id": alert_id}
     alert.status      = AlertStatus.RESOLVED.value
@@ -365,6 +342,7 @@ def get_pdf_report(
     since = datetime.now(timezone.utc) - timedelta(days=days)
     alerts = (
         db.query(Alert)
+        .options(joinedload(Alert.rule))
         .filter(Alert.patient_id == patient_id, Alert.created_at >= since)
         .order_by(desc(Alert.created_at))
         .all()
@@ -398,7 +376,7 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
         from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.units import cm
         from reportlab.lib import colors
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
     except ImportError:
@@ -407,6 +385,7 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
     import os as _os, uuid as _uuid
 
     FONT = "Helvetica"
+    FONT_BOLD = "Helvetica-Bold"
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "C:/Windows/Fonts/arial.ttf",
@@ -417,30 +396,40 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
             try:
                 pdfmetrics.registerFont(TTFont("TurkishFont", fp))
                 FONT = "TurkishFont"
+                FONT_BOLD = "TurkishFont"
                 break
             except Exception:
                 pass
 
     _uid = _uuid.uuid4().hex[:8]
-    title_style   = ParagraphStyle(f"CT_{_uid}", fontName=FONT, fontSize=18, spaceAfter=12, alignment=1)
-    heading_style = ParagraphStyle(f"CH_{_uid}", fontName=FONT, fontSize=13, spaceAfter=8, spaceBefore=12)
-    normal_style  = ParagraphStyle(f"CN_{_uid}", fontName=FONT, fontSize=10, spaceAfter=6)
-    small_style   = ParagraphStyle(f"CS_{_uid}", fontName=FONT, fontSize=8, textColor=colors.grey)
+    title_style   = ParagraphStyle(f"CT_{_uid}", fontName=FONT_BOLD, fontSize=20, spaceAfter=6,  alignment=1, textColor=colors.HexColor('#0d2d5e'))
+    subtitle_style= ParagraphStyle(f"CS_{_uid}", fontName=FONT,      fontSize=10, spaceAfter=16, alignment=1, textColor=colors.grey)
+    heading_style = ParagraphStyle(f"CH_{_uid}", fontName=FONT_BOLD, fontSize=13, spaceAfter=8,  spaceBefore=16, textColor=colors.HexColor('#0d2d5e'))
+    normal_style  = ParagraphStyle(f"CN_{_uid}", fontName=FONT,      fontSize=10, spaceAfter=6)
+    small_style   = ParagraphStyle(f"CSM_{_uid}",fontName=FONT,      fontSize=8,  textColor=colors.grey, spaceAfter=4)
 
-    def ts(header=False):
-        base = [
-            ("FONTNAME", (0, 0), (-1, -1), FONT),
-            ("FONTSIZE", (0, 0), (-1, -1), 10),
-            ("GRID",     (0, 0), (-1, -1), 0.5, colors.grey),
-            ("PADDING",  (0, 0), (-1, -1), 6),
-        ]
-        if header:
-            base += [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.darkblue),
-                ("TEXTCOLOR",  (0, 0), (-1, 0), colors.white),
-                ("FONTSIZE",   (0, 0), (-1, -1), 9),
-            ]
-        return base
+    SIGNAL_LABELS = {
+        "HEART_RATE": "Kalp Atışı"   if is_tr else "Heart Rate",
+        "SPO2":       "SpO₂",
+        "RESP_RATE":  "Solunum Hızı" if is_tr else "Resp. Rate",
+        "ECG":        "ECG",
+    }
+
+    def make_table_style(header_color=colors.HexColor('#0d2d5e')):
+        return TableStyle([
+            ("FONTNAME",    (0, 0), (-1, -1), FONT),
+            ("FONTSIZE",    (0, 0), (-1, -1), 9),
+            ("FONTNAME",    (0, 0), (-1, 0),  FONT_BOLD),
+            ("BACKGROUND",  (0, 0), (-1, 0),  header_color),
+            ("TEXTCOLOR",   (0, 0), (-1, 0),  colors.white),
+            ("ALIGN",       (0, 0), (-1, -1), "LEFT"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor('#f5f7fa')]),
+            ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor('#dee2e6')),
+            ("TOPPADDING",  (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING",(0,0), (-1, -1), 6),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",(0, 0), (-1, -1), 8),
+        ])
 
     buffer = BytesIO()
     doc    = SimpleDocTemplate(buffer, pagesize=A4,
@@ -448,74 +437,120 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
                                leftMargin=2*cm, rightMargin=2*cm)
     story  = []
 
-    title = "Manifetch NICU — Klinik Rapor" if is_tr else "Manifetch NICU — Clinical Report"
-    story.append(Paragraph(title, title_style))
-    story.append(Spacer(1, 0.5*cm))
+    # ── Başlık ────────────────────────────────────────────────────────────────
+    story.append(Paragraph("Manifetch NICU", title_style))
+    story.append(Paragraph(
+        ("Klinik İzlem Raporu" if is_tr else "Clinical Monitoring Report"),
+        subtitle_style,
+    ))
+    story.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor('#0d2d5e')))
+    story.append(Spacer(1, 0.4*cm))
     story.append(Paragraph(
         f"{'Oluşturulma tarihi' if is_tr else 'Generated on'}: "
         f"{datetime.now().strftime('%d.%m.%Y %H:%M')}",
-        normal_style,
+        small_style,
     ))
-    story.append(Spacer(1, 0.5*cm))
+    story.append(Spacer(1, 0.3*cm))
 
+    # ── Hasta Bilgileri ───────────────────────────────────────────────────────
     story.append(Paragraph("Hasta Bilgileri" if is_tr else "Patient Information", heading_style))
     patient_data = [
         ["Ad Soyad" if is_tr else "Full Name",              patient.full_name],
         ["Gestasyonel Yaş" if is_tr else "Gestational Age", f"{patient.gestational_age_weeks} {'hafta' if is_tr else 'weeks'}"],
-        ["Postnatal Yaş" if is_tr else "Postnatal Age",     f"{pna} {'gün' if is_tr else 'days'}"],
-        ["Kabul Tarihi" if is_tr else "Admission Date",     patient.admission_date.strftime("%d.%m.%Y")],
-        ["Rapor Dönemi" if is_tr else "Report Period",      f"{'Son' if is_tr else 'Last'} {days} {'gün' if is_tr else 'days'}"],
+        ["Postnatal Yaş"   if is_tr else "Postnatal Age",   f"{pna} {'gün' if is_tr else 'days'}"],
+        ["Kabul Tarihi"    if is_tr else "Admission Date",  patient.admission_date.strftime("%d.%m.%Y")],
+        ["Rapor Dönemi"    if is_tr else "Report Period",   f"{'Son' if is_tr else 'Last'} {days} {'gün' if is_tr else 'days'}"],
     ]
-    t = Table(patient_data, colWidths=[5*cm, 10*cm])
-    style = ts()
-    style.append(("BACKGROUND", (0, 0), (0, -1), colors.lightgrey))
-    t.setStyle(TableStyle(style))
-    story.append(t)
-    story.append(Spacer(1, 0.5*cm))
+    t_pat = Table(patient_data, colWidths=[5*cm, 11*cm])
+    pat_style = TableStyle([
+        ("FONTNAME",    (0, 0), (-1, -1), FONT),
+        ("FONTNAME",    (0, 0), (0, -1),  FONT_BOLD),
+        ("FONTSIZE",    (0, 0), (-1, -1), 9),
+        ("BACKGROUND",  (0, 0), (0, -1),  colors.HexColor('#eef2f7')),
+        ("GRID",        (0, 0), (-1, -1), 0.3, colors.HexColor('#dee2e6')),
+        ("TOPPADDING",  (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING",(0,0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+    ])
+    t_pat.setStyle(pat_style)
+    story.append(t_pat)
 
-    alert_title = (
-        f"{'Alarm Kayıtları' if is_tr else 'Alert Records'} "
-        f"({len(alerts)} {'adet' if is_tr else 'records'})"
-    )
-    story.append(Paragraph(alert_title, heading_style))
+    # ── Alert Kayıtları ───────────────────────────────────────────────────────
+    story.append(Paragraph(
+        f"{'Alarm Kayıtları' if is_tr else 'Alert Records'} ({len(alerts)} {'kayıt' if is_tr else 'records'})",
+        heading_style,
+    ))
     if alerts:
-        alert_data = [["Tarih" if is_tr else "Date", "Şiddet" if is_tr else "Severity", "Durum" if is_tr else "Status"]]
-        for a in alerts[:20]:
-            alert_data.append([a.created_at.strftime("%d.%m.%Y %H:%M"), a.severity, a.status])
-        t = Table(alert_data, colWidths=[6*cm, 4*cm, 5*cm])
-        t.setStyle(TableStyle(ts(header=True)))
-        story.append(t)
+        alert_header = [
+            "Tarih" if is_tr else "Date",
+            "Sinyal" if is_tr else "Signal",
+            "Şiddet" if is_tr else "Severity",
+            "Durum" if is_tr else "Status",
+        ]
+        alert_data = [alert_header]
+        for a in alerts[:25]:
+            signal = SIGNAL_LABELS.get(a.rule.signal_type, "AI Risk") if a.rule else "AI Risk"
+            alert_data.append([
+                a.created_at.strftime("%d.%m.%Y %H:%M"),
+                signal,
+                a.severity,
+                a.status,
+            ])
+        t_alert = Table(alert_data, colWidths=[5*cm, 4*cm, 3*cm, 4*cm])
+        t_alert.setStyle(make_table_style())
+        # Severity renklendir
+        for i, a in enumerate(alerts[:25], start=1):
+            if a.severity == "HIGH":
+                t_alert.setStyle(TableStyle([("TEXTCOLOR", (2, i), (2, i), colors.HexColor('#c62828'))]))
+            elif a.severity == "MEDIUM":
+                t_alert.setStyle(TableStyle([("TEXTCOLOR", (2, i), (2, i), colors.HexColor('#e65100'))]))
+        story.append(t_alert)
+        if len(alerts) > 25:
+            story.append(Paragraph(
+                f"... {'ve' if is_tr else 'and'} {len(alerts)-25} {'daha' if is_tr else 'more'}",
+                small_style,
+            ))
     else:
         story.append(Paragraph(
             "Bu dönemde alarm kaydı bulunmamaktadır." if is_tr else "No alerts recorded in this period.",
             normal_style,
         ))
-    story.append(Spacer(1, 0.5*cm))
 
-    ai_title = (
-        f"{'AI Risk Değerlendirmesi' if is_tr else 'AI Risk Assessment'} "
-        f"({len(ai_results)} {'kayıt' if is_tr else 'records'})"
-    )
-    story.append(Paragraph(ai_title, heading_style))
+    # ── AI Risk Değerlendirmesi ───────────────────────────────────────────────
+    story.append(Paragraph(
+        f"{'AI Risk Değerlendirmesi' if is_tr else 'AI Risk Assessment'} ({len(ai_results)} {'kayıt' if is_tr else 'records'})",
+        heading_style,
+    ))
     if ai_results:
-        ai_data = [["Tarih" if is_tr else "Date", "Risk", "Seviye" if is_tr else "Level", "Model"]]
+        ai_header = [
+            "Tarih" if is_tr else "Date",
+            "Sepsis",
+            "Apnea" if not is_tr else "Apne",
+            "Kardiyak" if is_tr else "Cardiac",
+            "Seviye" if is_tr else "Level",
+        ]
+        ai_data = [ai_header]
         for r in ai_results[:15]:
             ai_data.append([
                 r.timestamp.strftime("%d.%m.%Y %H:%M"),
-                f"{r.risk_score:.3f}",
+                f"{(r.sepsis_score or 0)*100:.1f}%",
+                f"{(r.apnea_score or 0)*100:.1f}%",
+                f"{(r.cardiac_score or 0)*100:.1f}%",
                 r.risk_level,
-                r.model_used,
             ])
-        t = Table(ai_data, colWidths=[6*cm, 3*cm, 4*cm, 4*cm])
-        t.setStyle(TableStyle(ts(header=True)))
-        story.append(t)
+        t_ai = Table(ai_data, colWidths=[5*cm, 3*cm, 3*cm, 3*cm, 2.5*cm])
+        t_ai.setStyle(make_table_style(header_color=colors.HexColor('#1a5276')))
+        story.append(t_ai)
     else:
         story.append(Paragraph(
             "Bu dönemde AI değerlendirmesi bulunmamaktadır." if is_tr else "No AI assessment in this period.",
             normal_style,
         ))
 
+    # ── Sorumluluk Reddi ──────────────────────────────────────────────────────
     story.append(Spacer(1, 1*cm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    story.append(Spacer(1, 0.2*cm))
     disclaimer = (
         "Bu rapor Manifetch NICU izleme sistemi tarafından otomatik oluşturulmuştur. "
         "Klinik karar desteği amacıyla sunulmakta olup sertifikalı tıbbi cihazların yerini tutmaz."

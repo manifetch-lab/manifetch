@@ -5,9 +5,6 @@ const AuthContext = createContext(null);
 
 const API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
 
-// DÜZELTME: localStorage yerine sessionStorage — XSS riski azaltıldı
-// NFR-1.10: "sensitive information in client-side storage" → sessionStorage
-// Tab kapatılınca oturum otomatik sona erer
 const storage = {
   get:    (key)        => sessionStorage.getItem(key),
   set:    (key, value) => sessionStorage.setItem(key, value),
@@ -40,7 +37,7 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
-  // DÜZELTME: 401 interceptor — token expiry otomatik handle edilir
+  // 401 interceptor — token expiry otomatik handle edilir
   useEffect(() => {
     let isRefreshing = false;
     let failedQueue  = [];
@@ -119,7 +116,6 @@ export function AuthProvider({ children }) {
 
     axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
 
-    // DÜZELTME: sessionStorage kullan
     storage.set('token',         access_token);
     storage.set('refresh_token', refresh_token);
     storage.set('role',          role);

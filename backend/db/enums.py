@@ -30,4 +30,4 @@ class Role(str, enum.Enum):
 class ModelType(str, enum.Enum):
     RANDOM_FOREST = "RANDOM_FOREST"
     XGBOOST       = "XGBOOST"
-    LIGHTGBM      = "LIGHTGBM"   # train_model.py kazanan model olarak seçebilir
+    LIGHTGBM      = "LIGHTGBM"  

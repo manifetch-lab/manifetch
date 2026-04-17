@@ -1,19 +1,3 @@
-"""
-Manifetch NICU — Inference Service
-====================================
-LLD: InferenceService + ModelRunner sınıfları
-
-Düzeltmeler:
-  - Apnea pencere boyutu: 600s → 1200s (prepare_features.py ile uyumlu)
-  - ECG fallback: sabit değerler → dinamik/NaN (model bias'ı önlenir)
-  - ModelRunner sınıfı eklendi (LLD uyumu, health endpoint crash düzeltildi)
-  - SHAP için asyncio.Lock yerine threading.Lock (FastAPI thread pool uyumlu)
-  - DÜZELTME: _load_models tüm model tiplerini ayrı key'lerle yükler
-    (önceki: break ile ilk bulunanı alıyordu, RF/XGB/LGB görmezden geliniyordu)
-  - DÜZELTME: ModelRunner.predict best_model meta'sından model tipini seçer
-  - DÜZELTME: SHAP explainer'lar disease_modeltype key'iyle ayrı tutulur
-"""
-
 import os
 import uuid
 import time

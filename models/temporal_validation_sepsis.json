@@ -1,39 +1,21 @@
 {
   "disease": "sepsis",
   "split": "temporal_80_20",
-  "n_train_patients": 100,
-  "n_test_patients": 100,
-  "n_train_windows": 105600,
-  "n_test_windows": 26400,
-  "pos_ratio_test": 0.48,
+  "n_train_patients": 200,
+  "n_test_patients": 200,
+  "n_train_windows": 211200,
+  "n_test_windows": 52800,
+  "pos_ratio_test": 0.54,
   "f1_target": 0.8,
   "all_f1_targets_met": true,
   "results": {
-    "lgb": {
-      "f1": 0.9955,
-      "recall": 0.9949,
-      "precision": 0.996,
-      "auc": 0.9999,
-      "aupr": 0.9999,
-      "threshold": 0.6648,
-      "f1_target_met": true
-    },
     "rf": {
-      "f1": 0.9998,
-      "recall": 1.0,
-      "precision": 0.9996,
+      "f1": 0.9972,
+      "recall": 0.9978,
+      "precision": 0.9967,
       "auc": 1.0,
       "aupr": 1.0,
-      "threshold": 0.7275,
-      "f1_target_met": true
-    },
-    "xgb": {
-      "f1": 0.9983,
-      "recall": 0.9975,
-      "precision": 0.9991,
-      "auc": 1.0,
-      "aupr": 1.0,
-      "threshold": 0.9494,
+      "threshold": 0.2988,
       "f1_target_met": true
     }
   }

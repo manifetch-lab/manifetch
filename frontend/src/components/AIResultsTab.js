@@ -166,9 +166,6 @@ export default function AIResultsTab({ patientId }) {
             <p style={{ fontWeight: 500 }}>
               {t.ai.riskScore}: {latest.risk_score.toFixed(2)} {t.ai.scale}
             </p>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-              {t.ai.model}: {latest.model_used}
-            </p>
           </div>
         </div>
       </div>

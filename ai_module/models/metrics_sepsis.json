@@ -1,34 +1,34 @@
 {
   "disease": "sepsis",
-  "best_model": "rf",
+  "best_model": "lgb",
   "recall_target": null,
   "results": {
     "lgb": {
-      "f1": 0.9275,
-      "recall": 0.899,
-      "precision": 0.9578,
-      "auc": 0.9684,
-      "aupr": 0.9696,
-      "threshold": 0.5324,
-      "time": 0.7
+      "f1": 0.954,
+      "recall": 0.9196,
+      "precision": 0.9911,
+      "auc": 0.9683,
+      "aupr": 0.978,
+      "threshold": 0.5869,
+      "time": 1.4
     },
     "rf": {
-      "f1": 0.9539,
-      "recall": 0.9127,
-      "precision": 0.999,
-      "auc": 0.9724,
-      "aupr": 0.9807,
-      "threshold": 0.7244,
-      "time": 10.2
+      "f1": 0.9506,
+      "recall": 0.9106,
+      "precision": 0.9944,
+      "auc": 0.9727,
+      "aupr": 0.98,
+      "threshold": 0.721,
+      "time": 19.3
     },
     "xgb": {
-      "f1": 0.9447,
-      "recall": 0.8956,
-      "precision": 0.9994,
-      "auc": 0.9582,
-      "aupr": 0.9715,
-      "threshold": 0.9616,
-      "time": 1.8
+      "f1": 0.9512,
+      "recall": 0.9245,
+      "precision": 0.9795,
+      "auc": 0.9709,
+      "aupr": 0.9798,
+      "threshold": 0.8246,
+      "time": 2.9
     }
   },
   "feature_cols": [
@@ -69,11 +69,11 @@
     "ecg_amp_min",
     "ecg_amp_slope"
   ],
-  "n_train": 101640,
-  "n_test": 30360,
-  "pos_ratio": 0.4617,
-  "roc_auc": 0.9724,
-  "pr_auc": 0.9807,
-  "best_threshold": 0.7244,
-  "best_iter": 5
+  "n_train": 199320,
+  "n_test": 64680,
+  "pos_ratio": 0.4764,
+  "roc_auc": 0.9683,
+  "pr_auc": 0.978,
+  "best_threshold": 0.5869,
+  "best_iter": 21
 }

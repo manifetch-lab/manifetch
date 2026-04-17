@@ -1,14 +1,3 @@
-"""
-Manifetch NICU — Inference Controller
-=======================================
-LLD: InferenceController sınıfı
-Endpoint: POST /ai/infer
-
-DÜZELTME 1: runInference CPU-bound — run_in_executor ile thread pool'a taşındı.
-DÜZELTME 2: AI skoru yüksekse otomatik alert üretilir (sepsis ≥ 0.75, cardiac ≥ 0.75).
-DÜZELTME 3: Cooldown hastalık bazlı — sepsis ve cardiac için ayrı ayrı 5 dakika.
-"""
-
 import asyncio
 import threading
 import json

@@ -1,21 +1,3 @@
-"""
-Manifetch NICU — Temporal Validation
-======================================
-Temporal split: her hastanın ilk %80'i train, son %20'si test.
-Bu yaklaşım "gelecekteki" veriyi tahmin ettiğimizi doğrular —
-GA-stratified random split'ten daha gerçekçi klinik değerlendirme sağlar.
-
-Neden önemli:
-  - Sliding window örnekleri aynı hastayla örtüşür → random split
-    veri sızıntısına (data leakage) yol açabilir.
-  - Temporal split: model hiç görmediği zaman dilimini tahmin eder.
-
-Çalıştır:
-  python test_temporal.py
-  python test_temporal.py --disease apnea
-  python test_temporal.py --data_dir data/all_data --out_dir models
-"""
-
 import argparse
 import json
 import os
@@ -60,11 +42,7 @@ RECALL_TARGETS = {"apnea": 0.85, "cardiac": None, "sepsis": None}
 
 
 def temporal_split(df: pd.DataFrame, train_ratio: float = 0.80):
-    """
-    Her hasta için ilk %train_ratio → train, kalan → test.
-    Pencereler timestamp_sec'e göre sıralanır.
-    Veri sızıntısı yok: test seti her zaman train setinden sonraki zaman dilimine ait.
-    """
+    
     train_rows = []
     test_rows  = []
 
@@ -252,7 +230,7 @@ def validate_disease(disease: str, data_dir: str, out_dir: str):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data_dir", default="data/all_data")
-    parser.add_argument("--out_dir",  default="models")
+    parser.add_argument("--out_dir",  default="ai_module/models")
     parser.add_argument("--disease",  default="all",
                         choices=["all"] + DISEASES)
     args = parser.parse_args()

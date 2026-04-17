@@ -1,17 +1,3 @@
-"""
-Manifetch NICU — RF + XGBoost + LightGBM Erken Uyarı Modelleri
-================================================================
-Her hastalık için ayrı model, 3 algoritma karşılaştırması:
-  - Hasta bazlı GA-stratified split (veri sızıntısı yok)
-  - Random Forest, XGBoost, LightGBM
-  - Apnea: recall≥0.85 hedefi (FN maliyeti yüksek — klinik öncelik)
-  - Cardiac, Sepsis: F1-max threshold
-  - SHAP açıklanabilirlik (kazanan model)
-  - Model ve metrikler kaydedilir
-
-Temporal validation için: test_temporal.py
-"""
-
 import argparse
 import json
 import os
@@ -621,16 +607,13 @@ def cross_validate_disease(disease: str, data_dir: str, out_dir: str,
     return cv_result
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN
-# ─────────────────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(
         description="Manifetch NICU — Model eğitimi"
     )
     parser.add_argument("--data_dir", default="data/all_data")
-    parser.add_argument("--out_dir",  default="models")
+    parser.add_argument("--out_dir",  default="ai_module/models")
     parser.add_argument("--disease",  default="all",
                         choices=["all"] + DISEASES)
     parser.add_argument("--cv",       action="store_true",

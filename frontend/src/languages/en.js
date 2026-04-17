@@ -1,5 +1,4 @@
 const en = {
-  // Login
   login: {
     title: "Login",
     username: "Username",
@@ -9,20 +8,20 @@ const en = {
     error: "Invalid username or password.",
   },
 
-  // Topbar
   topbar: {
     logout: "Logout",
   },
 
-  // Patient List
   patientList: {
     title: "Patient Dashboard",
     search: "🔍  Search patients...",
     addPatient: "+ Add Patient",
     newPatient: "New Patient",
+    updatePatient: "Update Patient",
     fullName: "Full Name",
     gestationalAge: "Gestational Age (weeks)",
     postnatalAge: "Postnatal Age (days)",
+    gaNote: "Note: Threshold rules are automatically updated when gestational age changes.",
     save: "Save",
     cancel: "Cancel",
     id: "ID",
@@ -39,9 +38,10 @@ const en = {
     inactive: "Inactive",
     loading: "Loading patients...",
     errorAdd: "Failed to add patient.",
+    errorUpdate: "Update failed.",
+    patientCount: "patients",
   },
 
-  // Patient Detail
   patientDetail: {
     patientInfo: "Patient Info",
     backToList: "Patient Dashboard",
@@ -53,7 +53,6 @@ const en = {
     loading: "Loading...",
   },
 
-  // Tabs
   tabs: {
     realTimeMonitor: "Real-Time Monitor",
     aiResults: "AI Results",
@@ -61,13 +60,12 @@ const en = {
     reports: "Reports",
   },
 
-  // Real Time Monitor
   monitor: {
     heartRate: "Heart Rate",
     spo2: "SpO₂",
     respRate: "Resp. Rate",
     ecgWaveform: "ECG Waveform",
-    ecgPlaceholder: "Live ECG monitoring display (waveform visualization)",
+    ecgPlaceholder: "Live ECG monitoring display",
     wsConnected: "WebSocket connected",
     wsConnecting: "Connecting...",
     wsDisconnected: "Disconnected",
@@ -76,7 +74,14 @@ const en = {
     resolve: "Resolve",
   },
 
-  // AI Results
+  ecg: {
+    waiting: "Waiting for ECG signal...",
+    connecting: "Connecting ECG...",
+    live: "ECG Live",
+    connecting2: "Connecting...",
+    noConnection: "No Connection",
+  },
+
   ai: {
     title: "AI Risk Assessment",
     timestamp: "Analysis Timestamp",
@@ -98,7 +103,6 @@ const en = {
     diseaseScores: "Disease Risk Scores",
   },
 
-  // Trend Analysis
   trend: {
     timeRange: "Time Range:",
     last6h: "Last 6 Hours",
@@ -113,9 +117,9 @@ const en = {
     min: "Min",
     max: "Max",
     loading: "Loading trend data...",
+    reference: "Reference",
   },
 
-  // Reports
   reports: {
     config: "Report Configuration",
     preview: "Report Preview",
@@ -150,14 +154,10 @@ const en = {
     alertHistory: "Alert History",
   },
 
-  // Admin
   admin: {
     title: "Administration Panel",
     userManagement: "User Management",
     simulationManagement: "Simulation Management",
-    systemSettings: "System Settings",
-    auditLogs: "Audit Logs",
-    dbBackup: "Database Backup",
     addUser: "+ Add User",
     newUser: "New User",
     username: "Username",
@@ -177,15 +177,51 @@ const en = {
     activate: "Activate",
     loading: "Loading users...",
     errorAdd: "Failed to add user.",
+    errorAction: "Action failed.",
     rolesTitle: "Role Permissions Overview",
     roles: {
       ADMINISTRATOR: "Full system access, user management, configuration",
       DOCTOR: "View/edit patient data, generate reports, access AI results",
       NURSE: "Monitor patients, acknowledge alerts, update vital signs",
     },
+    sim: {
+      startTitle: "Start New Simulation",
+      patient: "Patient",
+      scenario: "Scenario",
+      duration: "Duration (minutes)",
+      speed: "Speed (x)",
+      speedRealtime: "1x (real-time)",
+      start: "▶ Start Simulation",
+      starting: "Starting...",
+      activeTitle: "Active Simulations",
+      noActive: "No active simulations.",
+      running: "Running",
+      stop: "■ Stop",
+      notFound: "Patient not found",
+      errorStart: "Failed to start simulation.",
+      errorStop: "Failed to stop simulation.",
+    },
+    scenarios: {
+      normal: "Normal",
+      sepsis: "Sepsis",
+      apnea: "Apnea",
+      cardiac: "Cardiac",
+      mixed: "Mixed",
+    },
   },
 
-  // Common
+
+  toast: {
+    criticalAlert: "⚠ CRITICAL ALERT",
+    warning: "⚠ WARNING",
+    severity: "Severity",
+    acknowledge: "Acknowledge",
+    aiRiskAlert: "AI Risk Alert",
+    aiSepsisAlert: "AI Sepsis Risk",
+    aiCardiacAlert: "AI Cardiac Risk",
+    aiApneaAlert: "AI Apnea Risk",
+  },
+
   common: {
     ga: "GA",
     pna: "PNA",

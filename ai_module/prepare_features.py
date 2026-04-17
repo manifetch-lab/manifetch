@@ -1,18 +1,3 @@
-"""
-Manifetch NICU — Feature Hazırlama
-===================================
-all_vitals.csv → sliding window → feature vektörleri → 3 ayrı CSV
-
-Pencere boyutları (inference_service.py ile eşleşiyor):
-  Apnea:   X=1200s (20dk), Y=300s  (5dk),  adım=30s
-  Cardiac: X=1800s (30dk), Y=900s  (15dk), adım=60s
-  Sepsis:  X=3600s (60dk), Y=3600s (60dk), adım=60s
-
-Düzeltmeler:
-  - Label tüm sinyal türlerinden alınıyor (sadece HR'dan değil)
-  - iterrows() → vektörize numpy işlemleri (performans)
-"""
-
 import argparse
 import os
 import numpy as np

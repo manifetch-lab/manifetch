@@ -53,7 +53,7 @@ export default function ReportsTab({ patientId, patient }) {
           <div className="card" style={{ width: 400, textAlign: 'center' }}>
             <h3 style={{ marginBottom: 12, color: 'var(--navy)' }}>{t.reports.confirmTitle}</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: 20, fontSize: 14 }}>
-              {days} {t.reports.last7d.split(' ')[1]} {t.reports.confirmMsg}
+              {t.reports.confirmMsg}
             </p>
             <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
               <button className="btn btn-primary" onClick={handleGenerate}>{t.reports.confirmYes}</button>

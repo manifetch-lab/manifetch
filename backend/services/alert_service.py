@@ -6,23 +6,13 @@ from backend.services.rule_engine_service import RuleEngineService
 
 
 class AlertService:
-    """
-    LLD: AlertService
-    Methods: evaluateMeasurement, triggerAlert, resolveAlert, acknowledgeAlert
-
-    DÜZELTME: Servis artık kendi commit etmiyor.
-    Transaction yönetimi controller katmanına (ingestion.py / dashboard.py) bırakıldı.
-    """
 
     def __init__(self, db: Session):
         self.db          = db
         self.rule_engine = RuleEngineService(db)
 
     def process_measurement(self, measurement: VitalMeasurement) -> list[Alert]:
-        """
-        LLD: evaluateMeasurement — gelen ölçümü threshold kuralarına göre değerlendirir.
-        İhlal varsa triggerAlert çağırır, yeni Alert nesnelerini döner.
-        """
+        
         violated_rules = self.rule_engine.check_thresholds(
             measurement.patient_id, measurement
         )
@@ -41,10 +31,7 @@ class AlertService:
         rule:       ThresholdRule,
         measurement: VitalMeasurement,
     ) -> Alert | None:
-        """
-        LLD: triggerAlert(patientId, rule, measurement) -> Alert
-        Aynı kural için zaten ACTIVE alert varsa yeni oluşturmaz (tekrar bastırma).
-        """
+        
         existing = (
             self.db.query(Alert)
             .filter(
@@ -68,7 +55,7 @@ class AlertService:
         return alert
 
     def acknowledge(self, alert_id: str, user_id: str) -> Alert | None:
-        """LLD: acknowledgeAlert(alertId, userId)"""
+        
         alert = self.db.query(Alert).filter(Alert.alert_id == alert_id).first()
         if not alert:
             return None
@@ -82,11 +69,7 @@ class AlertService:
         return alert
 
     def resolve(self, alert_id: str) -> Alert | None:
-        """
-        LLD: resolveAlert(alertId)
-        DÜZELTME: Lifecycle kontrolü eklendi — ACTIVE → ACKNOWLEDGED → RESOLVED
-        ACTIVE durumdaki alert doğrudan RESOLVED'a geçemez.
-        """
+       
         alert = self.db.query(Alert).filter(Alert.alert_id == alert_id).first()
         if not alert:
             return None
@@ -98,11 +81,10 @@ class AlertService:
             )
 
         if alert.status == AlertStatus.RESOLVED.value:
-            return alert  # Zaten çözülmüş
+            return alert  
 
         alert.status      = AlertStatus.RESOLVED.value
         alert.resolved_at = datetime.now(timezone.utc)
-        # DÜZELTME: commit yok — controller commit eder
         return alert
 
     def get_active_alerts(self, patient_id: str) -> list[Alert]:

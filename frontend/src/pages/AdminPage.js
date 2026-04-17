@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Topbar from '../components/Topbar';
 import { useAuth } from '../context/AuthContext';
 import { useLang } from '../context/LanguageContext';
@@ -24,15 +23,12 @@ export default function AdminPage() {
   const [simLoading,  setSimLoading]  = useState(false);
   const [simError,    setSimError]    = useState('');
 
-  const { user }  = useAuth();
-  const { t }     = useLang();
-  const navigate  = useNavigate();
+  const { user } = useAuth();
+  const { t }    = useLang();
 
   const NAV = [
     t.admin.userManagement,
     t.admin.simulationManagement,
-    t.admin.auditLogs,
-    t.admin.dbBackup,
   ];
 
   useEffect(() => {
@@ -58,8 +54,7 @@ export default function AdminPage() {
   }, [activeNav]);
 
   const handleAdd = async (e) => {
-    e.preventDefault();
-    setFormErr('');
+    e.preventDefault(); setFormErr('');
     try {
       const res = await axios.post(`${BASE}/admin/users`, form);
       setUsers(prev => [...prev, res.data]);
@@ -78,24 +73,18 @@ export default function AdminPage() {
         x.user_id === u.user_id ? { ...x, is_active: !x.is_active } : x
       ));
     } catch (err) {
-      alert(err.response?.data?.detail || 'İşlem başarısız.');
+      alert(err.response?.data?.detail || t.admin.errorAction);
     }
   };
 
   const handleSimStart = async () => {
     if (!simPatient) return;
-    setSimLoading(true);
-    setSimError('');
+    setSimLoading(true); setSimError('');
     try {
-      await api.startSimulation({
-        patient_id: simPatient,
-        scenario:   simScenario,
-        duration:   simDuration,
-        speed:      simSpeed,
-      });
+      await api.startSimulation({ patient_id: simPatient, scenario: simScenario, duration: simDuration, speed: simSpeed });
       setSimRunning(prev => ({ ...prev, [simPatient]: { status: 'running' } }));
     } catch (err) {
-      setSimError(err.response?.data?.detail || 'Simülasyon başlatılamadı.');
+      setSimError(err.response?.data?.detail || t.admin.sim.errorStart);
     } finally {
       setSimLoading(false);
     }
@@ -105,24 +94,20 @@ export default function AdminPage() {
     setSimLoading(true);
     try {
       await api.stopSimulation(patientId);
-      setSimRunning(prev => {
-        const next = { ...prev };
-        delete next[patientId];
-        return next;
-      });
+      setSimRunning(prev => { const next = { ...prev }; delete next[patientId]; return next; });
     } catch (err) {
-      setSimError(err.response?.data?.detail || 'Simülasyon durdurulamadı.');
+      setSimError(err.response?.data?.detail || t.admin.sim.errorStop);
     } finally {
       setSimLoading(false);
     }
   };
 
   const SCENARIOS = [
-    { value: 'normal',  label: 'Normal' },
-    { value: 'sepsis',  label: 'Sepsis' },
-    { value: 'apnea',   label: 'Apnea' },
-    { value: 'cardiac', label: 'Kardiyak' },
-    { value: 'mixed',   label: 'Karışık' },
+    { value: 'normal',  label: t.admin.scenarios.normal },
+    { value: 'sepsis',  label: t.admin.scenarios.sepsis },
+    { value: 'apnea',   label: t.admin.scenarios.apnea },
+    { value: 'cardiac', label: t.admin.scenarios.cardiac },
+    { value: 'mixed',   label: t.admin.scenarios.mixed },
   ];
 
   return (
@@ -130,7 +115,6 @@ export default function AdminPage() {
       <Topbar title={t.admin.title} />
       <div style={{ display: 'flex', minHeight: 'calc(100vh - 56px)' }}>
 
-        {/* Sidebar */}
         <div style={{ width: 220, background: 'var(--navy)', padding: '24px 0', display: 'flex', flexDirection: 'column', gap: 4 }}>
           {NAV.map((item, i) => (
             <button key={item} onClick={() => setActiveNav(i)} style={{
@@ -143,10 +127,8 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {/* İçerik */}
         <div className="page-content" style={{ flex: 1 }}>
 
-          {/* Kullanıcı Yönetimi */}
           {activeNav === 0 && (
             <>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -242,22 +224,18 @@ export default function AdminPage() {
             </>
           )}
 
-          {/* Simülasyon Yönetimi */}
           {activeNav === 1 && (
             <>
               <h2 style={{ color: 'var(--navy)', fontSize: 22, fontWeight: 700, marginBottom: 20 }}>
                 {t.admin.simulationManagement}
               </h2>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                {/* Simülasyon Başlat */}
                 <div className="card">
-                  <h3 style={{ color: 'var(--navy)', marginBottom: 16 }}>Yeni Simülasyon Başlat</h3>
-
+                  <h3 style={{ color: 'var(--navy)', marginBottom: 16 }}>{t.admin.sim.startTitle}</h3>
                   <div className="form-group">
-                    <label className="form-label">Hasta</label>
+                    <label className="form-label">{t.admin.sim.patient}</label>
                     <select className="form-input" value={simPatient} onChange={e => setSimPatient(e.target.value)}>
-                      {patients.length === 0 && <option value="">Hasta bulunamadı</option>}
+                      {patients.length === 0 && <option value="">{t.admin.sim.notFound}</option>}
                       {patients.map(p => (
                         <option key={p.patient_id} value={p.patient_id}>
                           {p.full_name} — GA:{p.gestational_age_weeks}w
@@ -265,92 +243,68 @@ export default function AdminPage() {
                       ))}
                     </select>
                   </div>
-
                   <div className="form-group">
-                    <label className="form-label">Senaryo</label>
+                    <label className="form-label">{t.admin.sim.scenario}</label>
                     <select className="form-input" value={simScenario} onChange={e => setSimScenario(e.target.value)}>
-                      {SCENARIOS.map(s => (
-                        <option key={s.value} value={s.value}>{s.label}</option>
-                      ))}
+                      {SCENARIOS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                     </select>
                   </div>
-
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                     <div className="form-group">
-                      <label className="form-label">Süre (dakika)</label>
+                      <label className="form-label">{t.admin.sim.duration}</label>
                       <input className="form-input" type="number" min={1} max={60}
-                        value={simDuration / 60}
-                        onChange={e => setSimDuration(parseInt(e.target.value) * 60)} />
+                        value={simDuration / 60} onChange={e => setSimDuration(parseInt(e.target.value) * 60)} />
                     </div>
                     <div className="form-group">
-                      <label className="form-label">Hız (x)</label>
+                      <label className="form-label">{t.admin.sim.speed}</label>
                       <select className="form-input" value={simSpeed} onChange={e => setSimSpeed(parseFloat(e.target.value))}>
-                        <option value={1}>1x (gerçek zamanlı)</option>
+                        <option value={1}>{t.admin.sim.speedRealtime}</option>
                         <option value={2}>2x</option>
                         <option value={5}>5x</option>
                         <option value={10}>10x</option>
                       </select>
                     </div>
                   </div>
-
                   {simError && <p className="error-msg" style={{ marginBottom: 12 }}>{simError}</p>}
-
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleSimStart}
+                  <button className="btn btn-primary" onClick={handleSimStart}
                     disabled={simLoading || !simPatient || simRunning[simPatient]?.status === 'running'}
-                    style={{ width: '100%', justifyContent: 'center', padding: 12 }}
-                  >
-                    {simLoading ? 'Başlatılıyor...' : '▶ Simülasyonu Başlat'}
+                    style={{ width: '100%', justifyContent: 'center', padding: 12 }}>
+                    {simLoading ? t.admin.sim.starting : t.admin.sim.start}
                   </button>
                 </div>
 
-                {/* Aktif Simülasyonlar */}
                 <div className="card">
-                  <h3 style={{ color: 'var(--navy)', marginBottom: 16 }}>Aktif Simülasyonlar</h3>
+                  <h3 style={{ color: 'var(--navy)', marginBottom: 16 }}>{t.admin.sim.activeTitle}</h3>
                   {Object.keys(simRunning).filter(k => simRunning[k]?.status === 'running').length === 0 ? (
-                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Aktif simülasyon yok.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>{t.admin.sim.noActive}</p>
                   ) : (
-                    Object.entries(simRunning)
-                      .filter(([, v]) => v?.status === 'running')
-                      .map(([pid]) => {
-                        const p = patients.find(x => x.patient_id === pid);
-                        return (
-                          <div key={pid} style={{
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            padding: '10px 14px', borderRadius: 8, background: 'var(--bg)',
-                            marginBottom: 8, border: '1px solid var(--border)',
-                          }}>
-                            <div>
-                              <p style={{ fontWeight: 500, fontSize: 13 }}>{p?.full_name || pid.slice(0, 8)}</p>
-                              <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                <span style={{ color: '#22c55e' }}>● </span>Çalışıyor
-                              </p>
-                            </div>
-                            <button
-                              className="btn btn-danger"
-                              style={{ padding: '4px 14px', fontSize: 12 }}
-                              onClick={() => handleSimStop(pid)}
-                              disabled={simLoading}
-                            >
-                              ■ Durdur
-                            </button>
+                    Object.entries(simRunning).filter(([, v]) => v?.status === 'running').map(([pid]) => {
+                      const p = patients.find(x => x.patient_id === pid);
+                      return (
+                        <div key={pid} style={{
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                          padding: '10px 14px', borderRadius: 8, background: 'var(--bg)',
+                          marginBottom: 8, border: '1px solid var(--border)',
+                        }}>
+                          <div>
+                            <p style={{ fontWeight: 500, fontSize: 13 }}>{p?.full_name || pid.slice(0, 8)}</p>
+                            <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              <span style={{ color: '#22c55e' }}>● </span>{t.admin.sim.running}
+                            </p>
                           </div>
-                        );
-                      })
+                          <button className="btn btn-danger" style={{ padding: '4px 14px', fontSize: 12 }}
+                            onClick={() => handleSimStop(pid)} disabled={simLoading}>
+                            {t.admin.sim.stop}
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
             </>
           )}
 
-          {/* Stub sekmeler */}
-          {activeNav > 1 && (
-            <div className="card" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 48 }}>
-              <p style={{ fontSize: 16 }}>{NAV[activeNav]}</p>
-              <p style={{ fontSize: 13, marginTop: 8 }}>Bu bölüm henüz geliştirme aşamasında.</p>
-            </div>
-          )}
         </div>
       </div>
     </div>

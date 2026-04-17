@@ -1,11 +1,3 @@
-"""
-Manifetch AI Modül Testi
-Test Plan: TC-11, TC-14, TC-16, TC-36
-
-DÜZELTME: TC-14 artık her model tipini _models dict'inden doğrudan çekerek
-ayrı ayrı test ediyor. Eski halde runner.predict her iterasyonda yine
-best_model'i seçtiği için RF/XGB/LGB gerçekte test edilmiyordu.
-"""
 import sys, os, uuid, random, pickle, unittest, json
 import numpy as np
 

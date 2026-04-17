@@ -1,17 +1,3 @@
-"""
-Manifetch NICU — Simulation Controller
-========================================
-POST /simulation/start  — stream_publisher'ı başlatır
-POST /simulation/stop   — stream_publisher'ı durdurur
-GET  /simulation/status — aktif simülasyonları listeler
-
-DÜZELTME: STREAM_USERNAME ve STREAM_PASSWORD env'de yoksa hata fırlatılır.
-Eski halde hardcoded fallback ("nurse_mehmet" / "Nurse123!") vardı.
-.env dosyasına ekleyin:
-  STREAM_USERNAME=nurse_mehmet
-  STREAM_PASSWORD=<şifre>
-"""
-
 import subprocess
 import sys
 import os

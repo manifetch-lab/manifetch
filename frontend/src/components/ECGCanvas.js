@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useLang } from '../context/LanguageContext';
 
 const WS_BASE     = (process.env.REACT_APP_WS_URL || 'ws://127.0.0.1:8000');
 const ECG_HZ      = 25;
@@ -11,6 +12,7 @@ export default function ECGCanvas({ patientId }) {
   const wsRef     = useRef(null);
   const animRef   = useRef(null);
   const [wsState, setWsState] = useState('connecting');
+  const { t } = useLang();
 
   useEffect(() => {
     let cancelled = false;
@@ -29,9 +31,7 @@ export default function ECGCanvas({ patientId }) {
 
       ws.onclose = () => {
         setWsState('disconnected');
-        if (!cancelled) {
-          setTimeout(connect, 3000);
-        }
+        if (!cancelled) setTimeout(connect, 3000);
       };
 
       ws.onerror = () => setWsState('error');
@@ -88,7 +88,7 @@ export default function ECGCanvas({ patientId }) {
         ctx.font = '12px DM Mono, monospace';
         ctx.textAlign = 'center';
         ctx.fillText(
-          wsState === 'connected' ? 'ECG sinyali bekleniyor...' : 'ECG bağlantısı kuruluyor...',
+          wsState === 'connected' ? t.ecg.waiting : t.ecg.connecting,
           W / 2, H / 2
         );
         animRef.current = requestAnimationFrame(draw);
@@ -124,7 +124,7 @@ export default function ECGCanvas({ patientId }) {
 
     animRef.current = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(animRef.current);
-  }, [wsState]);
+  }, [wsState, t]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -140,7 +140,7 @@ export default function ECGCanvas({ patientId }) {
   }, []);
 
   const statusColor = wsState === 'connected' ? '#00c864' : wsState === 'connecting' ? '#f59e0b' : '#e53935';
-  const statusLabel = wsState === 'connected' ? 'ECG Canlı' : wsState === 'connecting' ? 'Bağlanıyor...' : 'Bağlantı Yok';
+  const statusLabel = wsState === 'connected' ? t.ecg.live : wsState === 'connecting' ? t.ecg.connecting2 : t.ecg.noConnection;
 
   return (
     <div>

@@ -1,28 +1,27 @@
 const tr = {
-  // Login
   login: {
-    title: "Giriş Yap",
+    title: "Giriş",
     username: "Kullanıcı Adı",
     password: "Şifre",
     submit: "Giriş Yap",
     loading: "Giriş yapılıyor...",
-    error: "Kullanıcı adı veya şifre hatalı.",
+    error: "Geçersiz kullanıcı adı veya şifre.",
   },
 
-  // Topbar
   topbar: {
     logout: "Çıkış",
   },
 
-  // Patient List
   patientList: {
     title: "Hasta Paneli",
     search: "🔍  Hasta ara...",
     addPatient: "+ Hasta Ekle",
     newPatient: "Yeni Hasta",
+    updatePatient: "Hasta Güncelle",
     fullName: "Ad Soyad",
     gestationalAge: "Gestasyonel Yaş (hafta)",
     postnatalAge: "Postnatal Yaş (gün)",
+    gaNote: "Not: Gestasyonel yaş değiştirildiğinde threshold kuralları otomatik güncellenir.",
     save: "Kaydet",
     cancel: "İptal",
     id: "ID",
@@ -35,13 +34,14 @@ const tr = {
     noPatients: "Hasta bulunamadı.",
     stable: "Stabil",
     critical: "Kritik",
-    monitoring: "İzleniyor",
+    monitoring: "İzlemede",
     inactive: "Pasif",
     loading: "Hastalar yükleniyor...",
     errorAdd: "Hasta eklenemedi.",
+    errorUpdate: "Güncelleme başarısız.",
+    patientCount: "hasta",
   },
 
-  // Patient Detail
   patientDetail: {
     patientInfo: "Hasta Bilgisi",
     backToList: "Hasta Paneli",
@@ -53,7 +53,6 @@ const tr = {
     loading: "Yükleniyor...",
   },
 
-  // Tabs
   tabs: {
     realTimeMonitor: "Gerçek Zamanlı İzleme",
     aiResults: "AI Sonuçları",
@@ -61,22 +60,28 @@ const tr = {
     reports: "Raporlar",
   },
 
-  // Real Time Monitor
   monitor: {
     heartRate: "Kalp Atışı",
     spo2: "SpO₂",
     respRate: "Solunum Hızı",
-    ecgWaveform: "ECG Dalgaformu",
-    ecgPlaceholder: "Canlı ECG izleme ekranı (dalga formu görselleştirmesi)",
+    ecgWaveform: "ECG Dalgası",
+    ecgPlaceholder: "Canlı ECG izleme ekranı",
     wsConnected: "WebSocket bağlı",
     wsConnecting: "Bağlanıyor...",
-    wsDisconnected: "Bağlantı kesildi",
+    wsDisconnected: "Bağlantı Yok",
     activeAlerts: "Aktif Alertler",
     acknowledge: "Onayla",
     resolve: "Çöz",
   },
 
-  // AI Results
+  ecg: {
+    waiting: "ECG sinyali bekleniyor...",
+    connecting: "ECG bağlantısı kuruluyor...",
+    live: "ECG Canlı",
+    connecting2: "Bağlanıyor...",
+    noConnection: "Bağlantı Yok",
+  },
+
   ai: {
     title: "AI Risk Değerlendirmesi",
     timestamp: "Analiz Zamanı",
@@ -88,34 +93,33 @@ const tr = {
     mediumRisk: "ORTA RİSK",
     lowRisk: "DÜŞÜK RİSK",
     clinical: "Klinik Yorum",
-    topFeatures: "En Etkili Özellikler",
+    topFeatures: "En Etkili Özellikler — Mean |SHAP Value|",
     noResults: "Henüz AI sonucu yok.",
     loading: "AI sonuçları yükleniyor...",
-    disclaimer: "Not: Bu AI değerlendirmesi klinik kararı desteklemek amacıyla sunulmaktadır, yerini almaz.",
-    highDesc: "AI modeli hastanın vital bulgularında endişe verici bir patern tespit etti. Acil klinik değerlendirme önerilir.",
-    mediumDesc: "AI modeli bazı anormal paternler tespit etti. Yakın izlem önerilir.",
-    lowDesc: "Vital bulgular kabul edilebilir sınırlar içinde. Rutin izleme devam etsin.",
+    disclaimer: "Not: Bu AI destekli değerlendirme, klinik kararı desteklemek amacıyla sunulmakta olup yerini alamaz.",
+    highDesc: "AI modeli hasta vital bulgularında endişe verici bir patern tespit etti. Acil klinik değerlendirme önerilir.",
+    mediumDesc: "AI modeli bazı anormal paternler tespit etti. Yakın takip önerilir.",
+    lowDesc: "Vital bulgular kabul edilebilir sınırlar içinde. Rutin izlemeye devam edin.",
     diseaseScores: "Hastalık Risk Skorları",
   },
 
-  // Trend Analysis
   trend: {
-    timeRange: "Zaman Aralığı",
+    timeRange: "Zaman Aralığı:",
     last6h: "Son 6 Saat",
     last24h: "Son 24 Saat",
     last7d: "Son 7 Gün",
     heartRateTrend: "Kalp Atışı Trendi",
     spo2Trend: "SpO₂ Trendi",
     respRateTrend: "Solunum Hızı Trendi",
-    noData: "Veri yok",
+    noData: "Veri bulunamadı",
     summary: "Özet İstatistikler",
     avg: "Ort",
     min: "Min",
     max: "Maks",
-    loading: "Trend verisi yükleniyor...",
+    loading: "Trend verileri yükleniyor...",
+    reference: "Referans",
   },
 
-  // Reports
   reports: {
     config: "Rapor Yapılandırması",
     preview: "Rapor Önizleme",
@@ -131,33 +135,29 @@ const tr = {
     include: "Rapora Dahil Et",
     items: [
       "Hasta demografik bilgileri",
-      "Vital bulgu özeti ve trendleri",
-      "Kritik alertler ve olay kaydı",
+      "Vital bulgular özeti ve trendler",
+      "Kritik alertler ve olaylar kaydı",
       "AI değerlendirme sonuçları",
     ],
     generate: "PDF Rapor Oluştur",
     generating: "Oluşturuluyor...",
-    noPermission: "Rapor oluşturma Doctor rolü gerektirir.",
+    noPermission: "Rapor oluşturma için Doktor rolü gereklidir.",
     error: "Rapor oluşturulamadı.",
     confirmTitle: "Rapor Oluşturulsun mu?",
-    confirmMsg: "seçili dönem için PDF rapor oluşturulacak ve indirilecek.",
+    confirmMsg: "Seçilen dönem için PDF rapor oluşturulacak ve indirilecektir.",
     confirmYes: "Evet, Oluştur",
     confirmNo: "İptal",
-    previewTitle: "NICU Klinik Raporu",
+    previewTitle: "YYBÜ Klinik Raporu",
     previewContent: "[Rapor içeriği önizlemesi]",
-    vitalSummary: "Vital Bulgu Özeti",
+    vitalSummary: "Vital Bulgular Özeti",
     aiResults: "AI Değerlendirme Sonuçları",
     alertHistory: "Alert Geçmişi",
   },
 
-  // Admin
   admin: {
     title: "Yönetim Paneli",
     userManagement: "Kullanıcı Yönetimi",
     simulationManagement: "Simülasyon Yönetimi",
-    systemSettings: "Sistem Ayarları",
-    auditLogs: "Denetim Kayıtları",
-    dbBackup: "Veritabanı Yedekleme",
     addUser: "+ Kullanıcı Ekle",
     newUser: "Yeni Kullanıcı",
     username: "Kullanıcı Adı",
@@ -173,19 +173,55 @@ const tr = {
     actions: "İşlemler",
     active: "Aktif",
     inactive: "Pasif",
-    deactivate: "Deaktif Et",
-    activate: "Aktif Et",
+    deactivate: "Devre Dışı Bırak",
+    activate: "Etkinleştir",
     loading: "Kullanıcılar yükleniyor...",
     errorAdd: "Kullanıcı eklenemedi.",
-    rolesTitle: "Rol Yetkileri",
+    errorAction: "İşlem başarısız.",
+    rolesTitle: "Rol Yetkileri Özeti",
     roles: {
       ADMINISTRATOR: "Tam sistem erişimi, kullanıcı yönetimi, yapılandırma",
-      DOCTOR: "Hasta verisi görüntüleme/düzenleme, rapor oluşturma, AI sonuçlarına erişim",
-      NURSE: "Hasta izleme, alert onaylama, vital bulgu güncelleme",
+      DOCTOR: "Hasta verilerini görüntüleme/düzenleme, rapor oluşturma, AI sonuçlarına erişim",
+      NURSE: "Hastaları izleme, alertleri onaylama, vital bulguları güncelleme",
+    },
+    sim: {
+      startTitle: "Yeni Simülasyon Başlat",
+      patient: "Hasta",
+      scenario: "Senaryo",
+      duration: "Süre (dakika)",
+      speed: "Hız (x)",
+      speedRealtime: "1x (gerçek zamanlı)",
+      start: "▶ Simülasyonu Başlat",
+      starting: "Başlatılıyor...",
+      activeTitle: "Aktif Simülasyonlar",
+      noActive: "Aktif simülasyon yok.",
+      running: "Çalışıyor",
+      stop: "■ Durdur",
+      notFound: "Hasta bulunamadı",
+      errorStart: "Simülasyon başlatılamadı.",
+      errorStop: "Simülasyon durdurulamadı.",
+    },
+    scenarios: {
+      normal: "Normal",
+      sepsis: "Sepsis",
+      apnea: "Apne",
+      cardiac: "Kardiyak",
+      mixed: "Karışık",
     },
   },
 
-  // Common
+
+  toast: {
+    criticalAlert: "⚠ KRİTİK ALERT",
+    warning: "⚠ UYARI",
+    severity: "Önem",
+    acknowledge: "Onayla",
+    aiRiskAlert: "AI Risk Alarmı",
+    aiSepsisAlert: "AI Sepsis Riski",
+    aiCardiacAlert: "AI Kardiyak Riski",
+    aiApneaAlert: "AI Apne Riski",
+  },
+
   common: {
     ga: "GY",
     pna: "PNA",

@@ -87,7 +87,7 @@ export default function PatientListPage() {
       ));
       setEditPatient(null);
     } catch (err) {
-      setEditErr(err.response?.data?.detail || 'Güncelleme başarısız.');
+      setEditErr(err.response?.data?.detail || t.patientList.errorUpdate);
     }
   };
 
@@ -107,7 +107,6 @@ export default function PatientListPage() {
           </div>
         </div>
 
-        {/* Yeni hasta formu */}
         {showAdd && (
           <div className="card" style={{ marginBottom: 20 }}>
             <h3 style={{ marginBottom: 16, color: 'var(--navy)' }}>{t.patientList.newPatient}</h3>
@@ -140,14 +139,13 @@ export default function PatientListPage() {
           </div>
         )}
 
-        {/* Düzenleme modal */}
         {editPatient && (
           <div style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
             display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999,
           }}>
             <div className="card" style={{ width: 440, padding: 28 }}>
-              <h3 style={{ marginBottom: 16, color: 'var(--navy)' }}>Hasta Güncelle</h3>
+              <h3 style={{ marginBottom: 16, color: 'var(--navy)' }}>{t.patientList.updatePatient}</h3>
               <form onSubmit={handleEdit}>
                 <div className="form-group">
                   <label className="form-label">{t.patientList.fullName}</label>
@@ -169,7 +167,7 @@ export default function PatientListPage() {
                   </div>
                 </div>
                 <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, marginBottom: 16 }}>
-                  Not: Gestasyonel yaş değiştirildiğinde threshold kuralları otomatik güncellenir.
+                  {t.patientList.gaNote}
                 </p>
                 {editErr && <p className="error-msg" style={{ marginBottom: 8 }}>{editErr}</p>}
                 <div style={{ display: 'flex', gap: 10 }}>
@@ -254,7 +252,7 @@ export default function PatientListPage() {
 
         {!loading && (
           <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10, textAlign: 'right' }}>
-            {filtered.length} / {patients.length} hasta
+            {filtered.length} / {patients.length} {t.patientList.patientCount}
           </p>
         )}
       </div>

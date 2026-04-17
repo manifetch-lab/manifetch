@@ -26,7 +26,7 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Uygulama başlangıcında tabloları oluştur ve AI modellerini yükle."""
+    
     # Tabloları oluştur (Alembic migration'a geçilene kadar)
     Base.metadata.create_all(bind=engine)
     print("[Startup] Tablolar hazır.")
@@ -74,7 +74,6 @@ def root():
 
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
-    """DÜZELTME: Gerçek sağlık kontrolü — DB bağlantısını da test eder."""
     try:
         db.execute(text("SELECT 1"))
         db_status = "ok"

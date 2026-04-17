@@ -1,23 +1,3 @@
-"""
-Manifetch NICU — Unified Sentetik Veri Üretici v7
-==================================================
-v6'dan farklar (düzeltmeler):
-  - --no_ecg flag'i artık çalışıyor (generate_patient'a bağlandı)
-  - label_healthy: hasta bazlı sabit etiket — hastalıklı hastada 0, sağlıklıda 1
-  - DISEASE_GA_LIMITS aktif olarak kullanılıyor
-  - ECG Hz tutarsızlığı giderildi: 25 Hz (hem kod hem print)
-  - rr_boost dead code kaldırıldı
-  - Her saniye default_rng() oluşturulmuyor — tek rng nesnesi
-  - import pandas dosya başına taşındı
-  - LLD uyumu: ScenarioConfig, Simulator, StreamPublisher sınıfları eklendi
-
-Korunanlar (v6'dan aynı):
-  - Sepsis: PRODROME → ACUTE → RECOVERY (PMC11798831, PMC8316489, PMC10314957)
-  - Apnea: GA/PNA/PMA bazlı durum makinesi (PMC3158333, PMC4422349)
-  - Cardiac: episodik SVT/bradyarrhythmia/AV blok (Brugada 2013, PALS, PMC3733095)
-  - 1-2-3 hastalık kombinasyonları, GA kısıtları
-"""
-
 import argparse
 import csv
 import json
@@ -228,21 +208,21 @@ def build_apnea_schedule(ga_weeks, pna_days, pma_weeks, onset_sec, duration_sec,
         return {}
 
     if ga_weeks < 28:
-        apnea_prob   = 0.18 * severity / 60
+        apnea_prob = 0.40 * severity / 60
         dur_range    = (20, 60)
         recovery_sec = 300
         desat_target = rng.uniform(62, 72)
         brady_floor  = 0.60
         rr_min_apnea = 0.0
     elif ga_weeks < 32:
-        apnea_prob   = 0.12 * severity / 60
+        apnea_prob = 0.30 * severity / 60
         dur_range    = (20, 45)
         recovery_sec = 240
         desat_target = rng.uniform(70, 78)
         brady_floor  = 0.65
         rr_min_apnea = 2.0
     else:
-        apnea_prob   = 0.06 * severity / 60
+        apnea_prob = 0.20 * severity / 60
         dur_range    = (20, 35)
         recovery_sec = 180
         desat_target = rng.uniform(76, 83)
@@ -374,15 +354,15 @@ def build_cardiac_schedule(onset_sec, duration_sec, cardiac_type, rng, ga_weeks)
         svt_peak_range   = (65, 105); brady_peak_range = (32, 58); av_peak_range = (15, 28)
 
     if cardiac_type == "svt":
-        interval_range = (2700, 10800); dur_range = (180, 1500)
+        interval_range = (60, 300);   dur_range = (60, 300)
     elif cardiac_type == "bradyarrhythmia":
-        interval_range = (1800, 7200);  dur_range = (120, 900)
+        interval_range = (60, 300);   dur_range = (60, 300)
     elif cardiac_type == "av_block":
-        interval_range = (3600, 14400); dur_range = (300, 1800)
-    else:
-        interval_range = (1800, 5400);  dur_range = (120, 1200)
+        interval_range = (120, 600);  dur_range = (120, 600)
+    else:  # fluctuating
+        interval_range = (60, 300);   dur_range = (60, 300)
 
-    schedule = {}
+    schedule = {}    
     s = onset_sec
 
     while s < duration_sec:
@@ -399,7 +379,7 @@ def build_cardiac_schedule(onset_sec, duration_sec, cardiac_type, rng, ga_weeks)
 
         if ep_subtype == "svt":
             peak_hr   =  float(rng.uniform(*svt_peak_range))
-            peak_spo2 = -float(rng.uniform(0.5, 2.0))
+            peak_spo2 = -float(rng.uniform(8, 15))
             peak_ecg  = -float(rng.uniform(0.30, 0.50))
             peak_rr   =  float(rng.uniform(5, 15))
         elif ep_subtype == "bradyarrhythmia":
@@ -409,7 +389,7 @@ def build_cardiac_schedule(onset_sec, duration_sec, cardiac_type, rng, ga_weeks)
             peak_rr   =  float(rng.uniform(-5, 5))
         else:
             peak_hr   = -float(rng.uniform(*av_peak_range))
-            peak_spo2 = -float(rng.uniform(1, 5))
+            peak_spo2 = -float(rng.uniform(3, 8))
             peak_ecg  = -float(rng.uniform(0.15, 0.25))
             peak_rr   =  float(rng.uniform(-3, 3))
 
@@ -695,10 +675,7 @@ def _generate_second(sec, start_time, config, baseline, pma_weeks,
 
 def generate_patient(config: ScenarioConfig, start_time: datetime,
                      output_dir: str, generate_ecg: bool = True):
-    """
-    Bir hasta için tüm sinyal satırlarını üretir.
-    DÜZELTME: generate_ecg parametresi — --no_ecg flag'i artık çalışıyor.
-    """
+ 
     baseline     = get_baseline(config.ga_weeks)
     pma_weeks    = compute_pma(config.ga_weeks, config.pna_days)
     duration_sec = config.duration_seconds
@@ -959,12 +936,16 @@ def main():
     n_sick = args.n_patients - n_healthy
     combos = [
         ["apnea"],
+        ["apnea"],
+        ["cardiac"],
         ["cardiac"],
         ["sepsis"],
         ["apnea", "cardiac"],
-        ["apnea", "sepsis"],
+        ["apnea", "cardiac"],
         ["apnea", "sepsis"],
         ["cardiac", "sepsis"],
+        ["cardiac", "sepsis"],
+        ["apnea", "cardiac", "sepsis"],
         ["apnea", "cardiac", "sepsis"],
     ]
     quota_list = []

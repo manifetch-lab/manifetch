@@ -12,9 +12,9 @@ import ReportsTab       from '../components/ReportsTab';
 function buildTabs(role, t) {
   const all = [
     { id: 'monitor', label: t.tabs.realTimeMonitor },
-    { id: 'ai',      label: t.tabs.aiResults,      roles: ['DOCTOR'] },
+    { id: 'ai',      label: t.tabs.aiResults },
     { id: 'trend',   label: t.tabs.trendAnalysis },
-    { id: 'reports', label: t.tabs.reports,         roles: ['DOCTOR'] },
+    { id: 'reports', label: t.tabs.reports, roles: ['DOCTOR'] },
   ];
   return all.filter(tab => !tab.roles || tab.roles.includes(role));
 }
@@ -43,86 +43,83 @@ function playAlertSound() {
   } catch (e) {}
 }
 
-const SIGNAL_LABELS = {
-  HEART_RATE: 'Kalp Atışı',
-  SPO2:       'SpO₂',
-  RESP_RATE:  'Solunum Hızı',
-  ECG:        'ECG',
-};
+function getAiDiseaseLabel(aiResult, t) {
+  if (!aiResult) return t.toast.aiRiskAlert;
+  const scores = {
+    sepsis:  aiResult.sepsis_score  || 0,
+    cardiac: aiResult.cardiac_score || 0,
+    apnea:   aiResult.apnea_score   || 0,
+  };
+  const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+  if (top === 'sepsis')  return t.toast.aiSepsisAlert;
+  if (top === 'cardiac') return t.toast.aiCardiacAlert;
+  if (top === 'apnea')   return t.toast.aiApneaAlert;
+  return t.toast.aiRiskAlert;
+}
 
 // ── Toast bileşeni ──────────────────────────────────────────────────────────
 
-function AlertToast({ toasts, onAck, onDismiss }) {
+function AlertToast({ toasts, onAck, onDismiss, t }) {
   if (toasts.length === 0) return null;
+
+  const SIGNAL_LABELS = {
+    HEART_RATE: t.monitor.heartRate,
+    SPO2:       t.monitor.spo2,
+    RESP_RATE:  t.monitor.respRate,
+    ECG:        'ECG',
+  };
 
   return (
     <div style={{
-      position: 'fixed',
-      top: 72,
-      right: 24,
-      zIndex: 1000,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-      maxWidth: 320,
+      position: 'fixed', top: 72, right: 24, zIndex: 1000,
+      display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 320,
     }}>
       {toasts.map(toast => {
         const isHigh  = toast.severity === 'HIGH';
         const bg      = isHigh ? '#c62828' : '#e65100';
+        // signal_type varsa rule-based, yoksa AI — label toast'a kayıt edildi
         const signal  = toast.signal_type
           ? (SIGNAL_LABELS[toast.signal_type] || toast.signal_type)
-          : 'AI Risk Alarmı';
-        const timeStr = new Date(toast.created_at).toLocaleTimeString('tr-TR', {
+          : toast.ai_label;
+        const timeStr = new Date(toast.created_at).toLocaleTimeString(undefined, {
           hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
 
         return (
           <div key={toast.id} style={{
-            background: bg,
-            color: 'white',
-            borderRadius: 10,
-            padding: '14px 16px',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
-            animation: 'slideIn 0.25s ease',
-            minWidth: 280,
+            background: bg, color: 'white', borderRadius: 10,
+            padding: '14px 16px', boxShadow: '0 4px 20px rgba(0,0,0,0.25)',
+            animation: 'slideIn 0.25s ease', minWidth: 280,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>
-                  {isHigh ? '⚠ KRİTİK ALERT' : '⚠ UYARI'}
+                  {isHigh ? t.toast.criticalAlert : t.toast.warning}
                 </p>
                 <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 2 }}>
                   {signal}
                 </p>
                 <p style={{ fontSize: 12, opacity: 0.85, marginBottom: 10 }}>
-                  Önem: {toast.severity} &nbsp;·&nbsp; {timeStr}
+                  {t.toast.severity}: {toast.severity} &nbsp;·&nbsp; {timeStr}
                 </p>
                 <button
                   onClick={() => onAck(toast.alert_id, toast.id)}
                   style={{
                     background: 'rgba(255,255,255,0.2)',
                     border: '1.5px solid rgba(255,255,255,0.6)',
-                    color: 'white',
-                    borderRadius: 6,
-                    padding: '5px 16px',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
+                    color: 'white', borderRadius: 6,
+                    padding: '5px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   }}
                 >
-                  Onayla
+                  {t.toast.acknowledge}
                 </button>
               </div>
               <button
                 onClick={() => onDismiss(toast.id)}
                 style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: 'rgba(255,255,255,0.75)',
-                  fontSize: 18,
-                  cursor: 'pointer',
-                  lineHeight: 1,
-                  padding: '0 0 0 12px',
+                  background: 'transparent', border: 'none',
+                  color: 'rgba(255,255,255,0.75)', fontSize: 18,
+                  cursor: 'pointer', lineHeight: 1, padding: '0 0 0 12px',
                 }}
               >
                 ✕
@@ -139,10 +136,11 @@ function AlertToast({ toasts, onAck, onDismiss }) {
 
 export default function PatientDetailPage() {
   const { patientId } = useParams();
-  const [patient,   setPatient]   = useState(null);
-  const [activeTab, setActiveTab] = useState('monitor');
-  const [loading,   setLoading]   = useState(true);
-  const [toasts,    setToasts]    = useState([]);
+  const [patient,      setPatient]      = useState(null);
+  const [activeTab,    setActiveTab]    = useState('monitor');
+  const [loading,      setLoading]      = useState(true);
+  const [toasts,       setToasts]       = useState([]);
+  const lastAiResultRef = useRef(null);
   const { user }   = useAuth();
   const { t }      = useLang();
   const navigate   = useNavigate();
@@ -174,18 +172,14 @@ export default function PatientDetailPage() {
   }, [dismissToast]);
 
   useEffect(() => {
-    if (user?.role === 'ADMINISTRATOR') {
-      navigate('/admin', { replace: true });
-    }
+    if (user?.role === 'ADMINISTRATOR') navigate('/admin', { replace: true });
   }, [user, navigate]);
 
   const TABS = buildTabs(user?.role, t);
 
   useEffect(() => {
     const valid = TABS.find(tab => tab.id === activeTab);
-    if (!valid && TABS.length > 0) {
-      setActiveTab(TABS[0].id);
-    }
+    if (!valid && TABS.length > 0) setActiveTab(TABS[0].id);
   }, [user?.role]);
 
   useEffect(() => {
@@ -195,59 +189,74 @@ export default function PatientDetailPage() {
       .finally(() => setLoading(false));
   }, [patientId]);
 
+  // Son AI sonucunu ref'te tut — toast oluşturulurken kullanılır
   useEffect(() => {
-    const pollAlerts = () => {
-      api.getAlerts(patientId)
-        .then(r => {
-          const incoming = r.data;
-          const prev     = alertsRef.current;
-
-          const prevIds   = new Set(prev.map(a => a.alert_id));
-          const newAlerts = incoming.filter(a => !prevIds.has(a.alert_id));
-
-          if (newAlerts.length > 0) {
-            if (newAlerts.some(a => a.severity === 'HIGH')) {
-              playAlertSound();
-            }
-
-            if (canAck) {
-              const newToasts = newAlerts.map(a => ({
-                id:          `${a.alert_id}_${Date.now()}`,
-                alert_id:    a.alert_id,
-                severity:    a.severity,
-                signal_type: a.signal_type || null,
-                created_at:  a.created_at,
-              }));
-              setToasts(prev => [...prev, ...newToasts]);
-
-              // 15 saniye sonra otomatik kapat
-              newToasts.forEach(toast => {
-                setTimeout(() => dismissToast(toast.id), 15000);
-              });
-            }
-          }
-
-          const changed =
-            incoming.length !== prev.length ||
-            incoming.some((a, i) => a.alert_id !== prev[i]?.alert_id || a.status !== prev[i]?.status);
-
-          if (changed) {
-            alertsRef.current = incoming;
-            setAlertsDisplay(incoming);
-          }
-        })
+    const fetchAi = () => {
+      api.getAIResults(patientId, 1)
+        .then(r => { if (r.data?.length > 0) lastAiResultRef.current = r.data[0]; })
         .catch(() => {});
+    };
+    fetchAi();
+    const interval = setInterval(fetchAi, 30000);
+    return () => clearInterval(interval);
+  }, [patientId]);
+
+  useEffect(() => {
+    const pollAlerts = async () => {
+      try {
+        const r        = await api.getAlerts(patientId);
+        const incoming = r.data;
+        const prev     = alertsRef.current;
+
+        const prevIds   = new Set(prev.map(a => a.alert_id));
+        const newAlerts = incoming.filter(a => !prevIds.has(a.alert_id));
+
+        if (newAlerts.length > 0) {
+          if (newAlerts.some(a => a.severity === 'HIGH')) playAlertSound();
+
+          if (canAck) {
+            // AI alert geldiğinde güncel AI sonucunu çek, sonra toast oluştur
+            const aiAlerts = newAlerts.filter(a => !a.signal_type);
+            if (aiAlerts.length > 0) {
+              try {
+                const aiRes = await api.getAIResults(patientId, 1);
+                if (aiRes.data?.length > 0) lastAiResultRef.current = aiRes.data[0];
+              } catch (_) {}
+            }
+
+            const newToasts = newAlerts.map(a => ({
+              id:          `${a.alert_id}_${Date.now()}`,
+              alert_id:    a.alert_id,
+              severity:    a.severity,
+              signal_type: a.signal_type || null,
+              ai_label:    a.signal_type ? null : getAiDiseaseLabel(lastAiResultRef.current, t),
+              created_at:  a.created_at,
+            }));
+            setToasts(prev => [...prev, ...newToasts]);
+            newToasts.forEach(toast => {
+              setTimeout(() => dismissToast(toast.id), 15000);
+            });
+          }
+        }
+
+        const changed =
+          incoming.length !== prev.length ||
+          incoming.some((a, i) => a.alert_id !== prev[i]?.alert_id || a.status !== prev[i]?.status);
+
+        if (changed) {
+          alertsRef.current = incoming;
+          setAlertsDisplay(incoming);
+        }
+      } catch (_) {}
     };
 
     pollAlerts();
     const interval = setInterval(pollAlerts, 5000);
     return () => clearInterval(interval);
-  }, [patientId, canAck]);
+  }, [patientId, canAck, t]);
 
-  const hasHighAlert = alertsDisplay.some(
-    a => a.severity === 'HIGH' && a.status === 'ACTIVE'
-  );
-  const activeCount = alertsDisplay.filter(a => a.status === 'ACTIVE').length;
+  const hasHighAlert = alertsDisplay.some(a => a.severity === 'HIGH' && a.status === 'ACTIVE');
+  const activeCount  = alertsDisplay.filter(a => a.status === 'ACTIVE').length;
 
   if (loading) return (
     <div>
@@ -264,6 +273,7 @@ export default function PatientDetailPage() {
         toasts={toasts}
         onAck={ackFromToast}
         onDismiss={dismissToast}
+        t={t}
       />
 
       <div className="page-content">
@@ -272,7 +282,7 @@ export default function PatientDetailPage() {
           onClick={() => navigate('/patients')}
           style={{ marginBottom: 16, display: 'inline-flex', alignItems: 'center', gap: 6 }}
         >
-          ← {t.patientDetail.backToList || 'Hasta Paneli'}
+          ← {t.patientDetail.backToList}
         </button>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
@@ -327,13 +337,8 @@ export default function PatientDetailPage() {
           ))}
         </div>
 
-        {activeTab === 'monitor'  && (
-          <RealTimeMonitor
-            patientId={patientId}
-            patient={patient}
-            alerts={alertsDisplay}
-            setAlerts={setAlerts}
-          />
+        {activeTab === 'monitor' && (
+        <RealTimeMonitor patientId={patientId} patient={patient} alerts={alertsDisplay} setAlerts={setAlerts} lastAiResult={lastAiResultRef.current} />
         )}
         {activeTab === 'ai'      && <AIResultsTab     patientId={patientId} />}
         {activeTab === 'trend'   && <TrendAnalysisTab patientId={patientId} patient={patient} />}

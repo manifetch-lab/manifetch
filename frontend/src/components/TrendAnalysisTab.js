@@ -33,7 +33,7 @@ export default function TrendAnalysisTab({ patientId, patient }) {
     { label: t.trend.last7d,  hours: 168 },
   ];
 
-  // DÜZELTME: RR eklendi — 3 sinyal türü
+  // RR eklendi — 3 sinyal türü
   const SIGNALS = [
     { key: 'HEART_RATE', label: t.trend.heartRateTrend, unit: 'bpm',  color: '#1a9b8c' },
     { key: 'SPO2',       label: t.trend.spo2Trend,      unit: '%',    color: '#1e6eb5' },
@@ -173,7 +173,7 @@ export default function TrendAnalysisTab({ patientId, patient }) {
                   {t.trend.max} {st.max}
                   {ref.min !== null && (
                     <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
-                      &nbsp; (Referans: {ref.min}–{ref.max})
+                      &nbsp; ({t.trend.reference}: {ref.min}–{ref.max})
                     </span>
                   )}
                 </p>

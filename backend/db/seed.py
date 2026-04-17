@@ -1,18 +1,3 @@
-"""
-UYARI — BU DOSYAYI DİKKATLİCE ÇALIŞTIRIN
-==========================================
-seed.py, all_vitals.csv içindeki tüm simüle hasta verisini (100+ hasta,
-milyonlarca satır) veritabanına yazar. Yanlışlıkla çalıştırılırsa:
-  - Varolan VitalMeasurement tablosu etkilenmez (zaten dolu kontrolü var)
-  - Ama yoksa yüz binlerce satır DB'ye yazılır ve geri alınamaz
-
-KULLANIM:
-  python -m backend.db.seed          # doğru kullanım
-  python backend/db/seed.py          # doğru kullanım
-
-Bu dosya hiçbir modülden import edilmemeli.
-"""
-
 import json
 import csv
 import os

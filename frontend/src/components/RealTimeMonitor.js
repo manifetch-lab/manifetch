@@ -101,6 +101,19 @@ export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts 
     } catch (err) { console.error(err); }
   };
 
+  const SIGNAL_LABELS = {
+    HEART_RATE: t.monitor.heartRate,
+    SPO2:       t.monitor.spo2,
+    RESP_RATE:  t.monitor.respRate,
+  };
+
+  const getAlertLabel = (alert) => {
+    if (alert.signal_type) {
+      return SIGNAL_LABELS[alert.signal_type] || alert.signal_type;
+    }
+    return t.toast.aiRiskAlert;
+  };
+
   const VITALS_CONFIG = [
     { key: 'HEART_RATE', label: t.monitor.heartRate, unit: 'bpm'  },
     { key: 'SPO2',       label: t.monitor.spo2,       unit: '%'    },
@@ -169,14 +182,19 @@ export default function RealTimeMonitor({ patientId, patient, alerts, setAlerts 
                 background: alert.status === 'ACKNOWLEDGED' ? 'var(--bg)' : alert.severity === 'HIGH' ? 'var(--danger-bg)' : 'var(--warning-bg)',
                 borderLeft: `4px solid ${alert.status === 'ACKNOWLEDGED' ? 'var(--border)' : alert.severity === 'HIGH' ? 'var(--danger)' : 'var(--warning)'}`,
               }}>
-                <div>
-                  <span className={`badge badge-${alert.severity.toLowerCase()}`} style={{ marginRight: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span className={`badge badge-${alert.severity.toLowerCase()}`}>
                     {alert.severity}
                   </span>
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginRight: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+                    {getAlertLabel(alert)}
+                  </span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {alert.status}
                   </span>
-                  <span style={{ fontSize: 13 }}>{new Date(alert.created_at).toLocaleTimeString()}</span>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {new Date(alert.created_at).toLocaleTimeString()}
+                  </span>
                 </div>
                 {canAck && (
                   <div style={{ display: 'flex', gap: 8 }}>
