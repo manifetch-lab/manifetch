@@ -4,6 +4,12 @@ Manifetch NICU — Simulation Controller
 POST /simulation/start  — stream_publisher'ı başlatır
 POST /simulation/stop   — stream_publisher'ı durdurur
 GET  /simulation/status — aktif simülasyonları listeler
+
+DÜZELTME: STREAM_USERNAME ve STREAM_PASSWORD env'de yoksa hata fırlatılır.
+Eski halde hardcoded fallback ("nurse_mehmet" / "Nurse123!") vardı.
+.env dosyasına ekleyin:
+  STREAM_USERNAME=nurse_mehmet
+  STREAM_PASSWORD=<şifre>
 """
 
 import subprocess
@@ -42,8 +48,15 @@ def start_simulation(
         if proc.poll() is None:
             raise HTTPException(status_code=409, detail="Bu hasta için simülasyon zaten çalışıyor.")
 
-    username = os.getenv("STREAM_USERNAME", "nurse_mehmet")
-    password = os.getenv("STREAM_PASSWORD", "Nurse123!")
+    # DÜZELTME: Hardcoded fallback kaldırıldı — env'de yoksa hata fırlat
+    username = os.getenv("STREAM_USERNAME")
+    password = os.getenv("STREAM_PASSWORD")
+
+    if not username or not password:
+        raise HTTPException(
+            status_code=500,
+            detail="STREAM_USERNAME ve STREAM_PASSWORD environment variable'ları ayarlanmamış."
+        )
 
     cmd = [
         sys.executable, "-m", "data_simulation.stream_publisher",

@@ -46,9 +46,6 @@ export const api = {
   startStream: (id)       => axios.post(`${BASE}/patients/${id}/streams`),
   stopStream:  (streamId) => axios.patch(`${BASE}/patients/streams/${streamId}/stop`),
 
-  // Threshold rules (hasta bazlı)
-  getThresholds: (id) => axios.get(`${BASE}/patients/${id}/thresholds`),
-
   // Simulation
   startSimulation: (data) => axios.post(`${BASE}/simulation/start`, data),
   stopSimulation:  (patientId) => axios.post(`${BASE}/simulation/stop`, null, { params: { patient_id: patientId } }),

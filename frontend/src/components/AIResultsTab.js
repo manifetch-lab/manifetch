@@ -1,13 +1,97 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import { api } from '../api/client';
 import { useLang } from '../context/LanguageContext';
 
+const DISEASE_COLORS = {
+  sepsis:  '#e53935',
+  apnea:   '#f59e0b',
+  cardiac: '#1e6eb5',
+};
+
+function ShapChart({ disease, features }) {
+  const color = DISEASE_COLORS[disease] || 'var(--teal)';
+  const data = [...features]
+    .sort((a, b) => b.importance - a.importance)
+    .map(f => ({
+      name: f.feature.replace(/_/g, ' '),
+      value: parseFloat(f.importance.toFixed(4)),
+    }));
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <p style={{
+        fontSize: 13, fontWeight: 600, color,
+        marginBottom: 8, textTransform: 'capitalize',
+      }}>
+        {disease.charAt(0).toUpperCase() + disease.slice(1)}
+      </p>
+      <ResponsiveContainer width="100%" height={data.length * 36 + 20}>
+        <BarChart
+          layout="vertical"
+          data={data}
+          margin={{ top: 0, right: 60, left: 140, bottom: 0 }}
+        >
+          <XAxis
+            type="number"
+            domain={[0, 'dataMax']}
+            tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            type="category"
+            dataKey="name"
+            width={135}
+            tick={{ fontSize: 12, fill: 'var(--text)' }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <Tooltip
+            formatter={(v) => [v.toFixed(4), 'SHAP']}
+            contentStyle={{
+              fontSize: 12,
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+            }}
+          />
+          <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
+            {data.map((_, i) => (
+              <Cell
+                key={i}
+                fill={color}
+                fillOpacity={1 - i * 0.18}
+              />
+            ))}
+            <LabelList
+              dataKey="value"
+              position="right"
+              formatter={v => v.toFixed(3)}
+              style={{ fontSize: 11, fill: 'var(--text-muted)' }}
+            />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function AIResultsTab({ patientId }) {
-  const [results,  setResults]  = useState([]);
-  const [loading,  setLoading]  = useState(true);
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(true);
   const { t } = useLang();
 
-  const load = () => {
+  // DÜZELTME: İki ayrı fonksiyon:
+  // - pollLoad: arka planda sessizce günceller, spinner yok, scroll korunur
+  // - fullLoad: spinner gösterir (ilk açılış + manuel yenile butonu)
+  const pollLoad = () => {
+    api.getAIResults(patientId)
+      .then(r => setResults(r.data))
+      .catch(console.error);
+  };
+
+  const fullLoad = () => {
     setLoading(true);
     api.getAIResults(patientId)
       .then(r => setResults(r.data))
@@ -16,8 +100,9 @@ export default function AIResultsTab({ patientId }) {
   };
 
   useEffect(() => {
-    load();
-    const interval = setInterval(load, 5000);
+    fullLoad();
+    // AI inference 30s'de bir çalışıyor, polling 30s yeterli
+    const interval = setInterval(pollLoad, 5000);
     return () => clearInterval(interval);
   }, [patientId]);
 
@@ -44,6 +129,7 @@ export default function AIResultsTab({ patientId }) {
   );
 
   const colors = riskColor(latest.risk_level);
+
   let shap = null;
   try {
     shap = latest.shap_values_json ? JSON.parse(latest.shap_values_json) : null;
@@ -66,7 +152,7 @@ export default function AIResultsTab({ patientId }) {
               {t.ai.timestamp}: {new Date(latest.timestamp).toLocaleString()}
             </p>
           </div>
-          <button className="btn btn-outline" onClick={load}>{t.ai.refresh}</button>
+          <button className="btn btn-outline" onClick={fullLoad}>{t.ai.refresh}</button>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginTop: 16 }}>
@@ -120,37 +206,18 @@ export default function AIResultsTab({ patientId }) {
         </div>
       </div>
 
-      {/* SHAP açıklama kartı */}
+      {/* SHAP Bar Chart */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ color: 'var(--navy)', marginBottom: 12 }}>{t.ai.clinical}</h3>
+        <h3 style={{ color: 'var(--navy)', marginBottom: 4 }}>{t.ai.clinical}</h3>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+          {t.ai.topFeatures} — Mean |SHAP Value|
+        </p>
         {shap ? (
-          <div>
-            <p style={{ fontWeight: 500, marginBottom: 8 }}>{t.ai.topFeatures}:</p>
-            {Object.entries(shap).map(([disease, features]) => (
-              <div key={disease} style={{ marginBottom: 12 }}>
-                <p style={{
-                  fontSize: 13, fontWeight: 600, color: 'var(--teal)',
-                  marginBottom: 6, textTransform: 'capitalize',
-                }}>
-                  {disease}
-                </p>
-                {Array.isArray(features) && features.map((f, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                    <span style={{ fontSize: 13, width: 200, color: 'var(--text-muted)' }}>{f.feature}</span>
-                    <div style={{ flex: 1, height: 6, background: 'var(--bg)', borderRadius: 3 }}>
-                      <div style={{
-                        height: '100%', borderRadius: 3, background: 'var(--teal)',
-                        width: `${Math.min(f.importance * 100, 100)}%`,
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-muted)', width: 50 }}>
-                      {f.importance.toFixed(3)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
+          Object.entries(shap).map(([disease, features]) =>
+            Array.isArray(features) && features.length > 0 ? (
+              <ShapChart key={disease} disease={disease} features={features} />
+            ) : null
+          )
         ) : (
           <p style={{ fontSize: 13, color: 'var(--text-muted)', fontStyle: 'italic' }}>
             {t.ai.disclaimer}

@@ -3,12 +3,18 @@ Manifetch NICU — Inference Controller
 =======================================
 LLD: InferenceController sınıfı
 Endpoint: POST /ai/infer
+
+DÜZELTME 1: runInference CPU-bound — run_in_executor ile thread pool'a taşındı.
+DÜZELTME 2: AI skoru yüksekse otomatik alert üretilir (sepsis ≥ 0.75, cardiac ≥ 0.75).
+DÜZELTME 3: Cooldown hastalık bazlı — sepsis ve cardiac için ayrı ayrı 5 dakika.
 """
 
+import asyncio
 import threading
 import json
-from datetime import datetime, timezone
-from typing import List, Optional
+import uuid
+from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Dict, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
@@ -16,13 +22,20 @@ from sqlalchemy.orm import Session
 
 from ai_module.inference_service import InferenceService, VitalMeasurement
 from backend.db.base import get_db
-from backend.db.models import AIResult as AIResultModel
+from backend.db.models import AIResult as AIResultModel, Alert
+from backend.db.enums import AlertStatus, Severity
 from backend.api.auth import require_any_role
 from backend.db.models import User
 
 router = APIRouter(prefix="/ai", tags=["AI Inference"])
 
-# DÜZELTME: Singleton thread-safe — lock ile race condition önlendi
+AI_ALERT_THRESHOLD = 0.75
+AI_ALERT_COOLDOWN  = 300  # saniye — hastalık bazlı 5 dakika cooldown
+
+# In-memory cooldown: (patient_id, disease) → son alert zamanı
+_ai_alert_cooldown: Dict[Tuple[str, str], datetime] = {}
+_cooldown_lock = threading.Lock()
+
 _service: Optional[InferenceService] = None
 _service_lock = threading.Lock()
 
@@ -31,7 +44,7 @@ def get_service() -> InferenceService:
     global _service
     if _service is None:
         with _service_lock:
-            if _service is None:   # double-checked locking
+            if _service is None:
                 _service = InferenceService()
     return _service
 
@@ -57,20 +70,64 @@ class InferenceRequestDTO(BaseModel):
 
 
 class AIResultDTO(BaseModel):
-    """LLD: AIResult — multi-label skorlar dahil."""
-    resultId:       str
-    patientId:      str
-    timeStamp:      str
-    riskScore:      float
-    riskLevel:      str   = Field(..., description="LOW | MEDIUM | HIGH")
-    sepsis_score:   float
-    apnea_score:    float
-    cardiac_score:  float
-    sepsis_label:   int
-    apnea_label:    int
-    cardiac_label:  int
-    shap_top3:      dict
+    resultId:        str
+    patientId:       str
+    timeStamp:       str
+    riskScore:       float
+    riskLevel:       str  = Field(..., description="LOW | MEDIUM | HIGH")
+    sepsis_score:    float
+    apnea_score:     float
+    cardiac_score:   float
+    sepsis_label:    int
+    apnea_label:     int
+    cardiac_label:   int
+    shap_top3:       dict
     formattedResult: str
+
+
+# ── Yardımcı: AI alert üret ───────────────────────────────────────────────────
+
+def _create_ai_alerts(db: Session, patient_id: str, result) -> list:
+    """
+    Sepsis veya cardiac skoru eşiği geçince HIGH alert üretir.
+    Cooldown hastalık bazlı — sepsis için ayrı, cardiac için ayrı 5 dakika.
+    """
+    scores = {
+        "sepsis":  result.sepsis_score,
+        "cardiac": result.cardiac_score,
+        "apnea":   result.apnea_score,
+    }
+
+    now = datetime.now(timezone.utc)
+    triggered = []
+
+    with _cooldown_lock:
+        for disease, score in scores.items():
+            if score < AI_ALERT_THRESHOLD:
+                continue
+
+            key = (patient_id, disease)
+            last_alert = _ai_alert_cooldown.get(key)
+
+            if last_alert and (now - last_alert).total_seconds() < AI_ALERT_COOLDOWN:
+                continue  # cooldown dolmadı
+
+            # Alert oluştur
+            alert = Alert(
+                alert_id       = str(uuid.uuid4()),
+                patient_id     = patient_id,
+                rule_id        = None,
+                measurement_id = None,
+                status         = AlertStatus.ACTIVE.value,
+                severity       = Severity.HIGH.value,
+                created_at     = now,
+            )
+            db.add(alert)
+            triggered.append(alert)
+            _ai_alert_cooldown[key] = now
+            print(f"[InferenceController] AI alert: {disease} score={score:.2f} → HIGH")
+
+    return triggered
 
 
 # ── Endpoint'ler ──────────────────────────────────────────────────────────────
@@ -81,12 +138,6 @@ async def infer(
     db:           Session = Depends(get_db),
     current_user: User    = Depends(require_any_role),
 ) -> AIResultDTO:
-    """
-    LLD: InferenceController.infer(patientId, input) -> AIResultDTO
-
-    Bir hasta için anlık risk değerlendirmesi yapar.
-    Sonucu isteğe bağlı olarak DB'ye kaydeder (save_to_db=True varsayılan).
-    """
     try:
         measurements = [
             VitalMeasurement(
@@ -102,9 +153,15 @@ async def infer(
         ]
 
         service = get_service()
-        result  = service.runInference(request.patientId, measurements)
 
-        # Sonucu DB'ye kaydet
+        loop   = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            service.runInference,
+            request.patientId,
+            measurements,
+        )
+
         if request.save_to_db:
             ai_record = AIResultModel(
                 result_id        = result.resultId,
@@ -122,7 +179,14 @@ async def infer(
                 shap_values_json = json.dumps(result.shap_top3),
             )
             db.add(ai_record)
+
+            ai_alerts = _create_ai_alerts(db, request.patientId, result)
             db.commit()
+
+            if ai_alerts:
+                from backend.api.websocket_manager import notify_alert
+                for alert in ai_alerts:
+                    asyncio.create_task(notify_alert(alert))
 
         return AIResultDTO(
             resultId        = result.resultId,
@@ -148,7 +212,6 @@ async def infer(
 
 @router.get("/health")
 async def health_check():
-    """AI modülü sağlık kontrolü — ModelRunner artık mevcut, crash yok."""
     service = get_service()
     return {
         "status":       "ok",

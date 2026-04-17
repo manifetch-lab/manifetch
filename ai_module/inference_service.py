@@ -8,6 +8,10 @@ Düzeltmeler:
   - ECG fallback: sabit değerler → dinamik/NaN (model bias'ı önlenir)
   - ModelRunner sınıfı eklendi (LLD uyumu, health endpoint crash düzeltildi)
   - SHAP için asyncio.Lock yerine threading.Lock (FastAPI thread pool uyumlu)
+  - DÜZELTME: _load_models tüm model tiplerini ayrı key'lerle yükler
+    (önceki: break ile ilk bulunanı alıyordu, RF/XGB/LGB görmezden geliniyordu)
+  - DÜZELTME: ModelRunner.predict best_model meta'sından model tipini seçer
+  - DÜZELTME: SHAP explainer'lar disease_modeltype key'iyle ayrı tutulur
 """
 
 import os
@@ -35,12 +39,14 @@ except ImportError:
 
 DEFAULT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 
-# DÜZELTME: Tüm pencere boyutları prepare_features.py ile eşleşiyor
 DISEASE_CONFIGS = {
     "sepsis":  {"window_sec": 3600},
-    "apnea":   {"window_sec": 1200},   # prepare_features: x_sec=1200
-    "cardiac": {"window_sec": 1800},
+    "apnea":   {"window_sec": 300},
+    "cardiac": {"window_sec": 600},
 }
+
+# Yükleme ve seçim sırası — metrics_*.json'daki best_model değeri öncelikli
+MODEL_TYPES = ["lgb", "xgb", "rf"]
 
 VITAL_FEATURE_COLS = [
     "hr_mean", "hr_std", "hr_min", "hr_max", "hr_last", "hr_slope", "hr_hrv",
@@ -90,7 +96,7 @@ class AIResult:
         self.riskScore     = round(max(sepsis_score, apnea_score, cardiac_score), 4)
         if   self.riskScore >= 0.75: self.riskLevel = "HIGH"
         elif self.riskScore >= 0.50: self.riskLevel = "MEDIUM"
-        else:                         self.riskLevel = "LOW"
+        else:                        self.riskLevel = "LOW"
 
     def getFormattedResult(self) -> str:
         active = []
@@ -161,8 +167,8 @@ class ModelRunner:
     Attributes: modelVersion
     Methods: predict(features: FeatureVector): float
 
-    DÜZELTME: Bu sınıf eksikti — inference_controller.py'deki
-    service.runner.get_model_version() çağrısı AttributeError veriyordu.
+    models dict key formatı: "{disease}_{model_type}"
+    Örnek: "sepsis_lgb", "apnea_rf", "cardiac_xgb"
     """
 
     def __init__(self, models: dict, meta: dict):
@@ -170,20 +176,31 @@ class ModelRunner:
         self._meta   = meta
 
     def get_model_version(self) -> str:
-        """Yüklü modellerin versiyon bilgisini döner."""
-        versions = {}
-        for disease, model in self._models.items():
-            best = self._meta.get(disease, {}).get("best_model", "unknown")
-            versions[disease] = best
-        return str(versions)
+        """Yüklü modellerin listesini döner."""
+        return str(list(self._models.keys()))
 
     def predict(self, features: dict, disease: str,
                 feature_cols: list, threshold: float) -> tuple[float, int]:
         """
         LLD: predict(features: FeatureVector): float
-        (disease, threshold) parametreleri eklendi — çok hastalıklı model için.
+
+        Önce metrics_*.json'daki best_model tipini seçer.
+        Bulamazsa MODEL_TYPES sırasına göre ilk yüklü modeli kullanır.
         """
-        model = self._models.get(disease)
+        # 1) best_model meta'dan
+        best_type = self._meta.get(disease, {}).get("best_model", None)
+        model = None
+
+        if best_type:
+            model = self._models.get(f"{disease}_{best_type}")
+
+        # 2) Fallback: sırayla dene
+        if model is None:
+            for mtype in MODEL_TYPES:
+                model = self._models.get(f"{disease}_{mtype}")
+                if model is not None:
+                    break
+
         if model is None:
             return 0.0, 0
 
@@ -191,8 +208,6 @@ class ModelRunner:
             [features.get(c, 0.0) for c in feature_cols],
             dtype=float,
         ).reshape(1, -1)
-
-        # NaN değerleri 0 ile doldur (eksik ECG gibi)
         vector = np.nan_to_num(vector, nan=0.0)
 
         if LGB_AVAILABLE and hasattr(model, "predict") and not hasattr(model, "predict_proba"):
@@ -214,31 +229,30 @@ class InferenceService:
     """
 
     def __init__(self, model_dir: str = DEFAULT_MODEL_DIR):
-        self.model_dir       = model_dir
-        self._models: dict   = {}
-        self._meta: dict     = {}
-        self._shap_explainers: dict = {}
-        self._shap_lock      = threading.Lock()
+        self.model_dir          = model_dir
+        self._models: dict      = {}   # key: "{disease}_{mtype}"
+        self._meta: dict        = {}   # key: disease
+        self._shap_explainers: dict = {}  # key: "{disease}_{mtype}"
+        self._shap_lock         = threading.Lock()
         self._load_models()
-        # DÜZELTME: ModelRunner örneği — health endpoint artık crash yapmaz
         self.runner = ModelRunner(self._models, self._meta)
 
     def _load_models(self):
+        """
+        DÜZELTME: Her hastalık × her model tipi ayrı key'e yüklenir.
+        Eski davranış: break ile ilk bulunan model alınıyor, diğerleri ignore ediliyordu.
+        Yeni davranış: sepsis_lgb, sepsis_xgb, sepsis_rf hepsi birden yüklenir.
+        """
         for disease in DISEASE_CONFIGS:
-            for prefix in [
-                f"model_{disease}",
-                f"model_lgb_{disease}",
-                f"model_xgb_{disease}",
-                f"model_rf_{disease}",
-                f"{disease}_best",
-            ]:
-                path = os.path.join(self.model_dir, f"{prefix}.pkl")
+            # Her model tipini ayrı yükle
+            for mtype in MODEL_TYPES:
+                path = os.path.join(self.model_dir, f"model_{mtype}_{disease}.pkl")
                 if os.path.exists(path):
                     with open(path, "rb") as f:
-                        self._models[disease] = pickle.load(f)
-                    print(f"[InferenceService] {disease} → {prefix}.pkl")
-                    break
+                        self._models[f"{disease}_{mtype}"] = pickle.load(f)
+                    print(f"[InferenceService] {disease}_{mtype} yüklendi")
 
+            # metrics JSON
             meta_path = os.path.join(self.model_dir, f"metrics_{disease}.json")
             if os.path.exists(meta_path):
                 with open(meta_path) as f:
@@ -250,12 +264,13 @@ class InferenceService:
                 "Önce train_model.py ile modelleri eğitin."
             )
 
+        # SHAP: her model için ayrı explainer
         if SHAP_AVAILABLE:
-            for disease, model in self._models.items():
+            for key, model in self._models.items():
                 try:
-                    self._shap_explainers[disease] = shap.TreeExplainer(model)
+                    self._shap_explainers[key] = shap.TreeExplainer(model)
                 except Exception as e:
-                    print(f"[InferenceService] SHAP explainer yüklenemedi ({disease}): {e}")
+                    print(f"[InferenceService] SHAP explainer yüklenemedi ({key}): {e}")
 
         print(f"[InferenceService] {len(self._models)} model yüklendi: "
               f"{list(self._models.keys())}")
@@ -269,10 +284,23 @@ class InferenceService:
 
     def _get_threshold(self, disease: str) -> float:
         if disease in self._meta:
-            results = self._meta[disease].get("results", {})
-            best    = self._meta[disease].get("best_model", "xgb")
-            return results.get(best, {}).get("threshold", 0.5)
+            results   = self._meta[disease].get("results", {})
+            best_type = self._meta[disease].get("best_model", "lgb")
+            return results.get(best_type, {}).get("threshold", 0.5)
         return 0.5
+
+    def _get_shap_key(self, disease: str) -> Optional[str]:
+        """best_model tipiyle SHAP key'i döner; yoksa ilk bulunanı döner."""
+        best_type = self._meta.get(disease, {}).get("best_model", None)
+        if best_type:
+            key = f"{disease}_{best_type}"
+            if key in self._shap_explainers:
+                return key
+        for mtype in MODEL_TYPES:
+            key = f"{disease}_{mtype}"
+            if key in self._shap_explainers:
+                return key
+        return None
 
     def preprocess(
         self,
@@ -295,7 +323,6 @@ class InferenceService:
             spo2_vals = [95.0] * len(hr_vals)
 
         if not rr_vals:
-            # DÜZELTME: Disease'e göre klinik anlamlı fallback
             rr_fallback = {"apnea": 5.0, "sepsis": 65.0, "cardiac": 45.0}
             rr_vals     = [rr_fallback.get(disease, 45.0)] * len(hr_vals)
 
@@ -327,13 +354,13 @@ class InferenceService:
         hr_c = hr[~np.isnan(hr)]
         feats["hr_hrv"] = float(np.std(hr_c)) if len(hr_c) > 0 else np.nan
 
-        rr_c = rr[~np.isnan(rr)]
+        rr_c    = rr[~np.isnan(rr)]
+        rr_mean = float(np.mean(rr_c)) if len(rr_c) > 0 else 1.0
         feats["rr_pct_below_30"] = float(np.mean(rr_c < 30)) if len(rr_c) > 0 else np.nan
         feats["rr_pct_below_10"] = float(np.mean(rr_c < 10)) if len(rr_c) > 0 else np.nan
-        rr_mean = float(np.mean(rr_c)) if len(rr_c) > 0 else 1.0
-        feats["rr_cv"]       = float(np.std(rr_c) / max(rr_mean, 1.0)) if len(rr_c) > 0 else np.nan
-        hr_mean              = feats.get("hr_mean", 0.0) or 0.0
-        feats["hr_rr_ratio"] = float(hr_mean / max(rr_mean, 1.0)) if rr_mean > 0 else np.nan
+        feats["rr_cv"]           = float(np.std(rr_c) / max(rr_mean, 1.0)) if len(rr_c) > 0 else np.nan
+        hr_mean                  = feats.get("hr_mean", 0.0) or 0.0
+        feats["hr_rr_ratio"]     = float(hr_mean / max(rr_mean, 1.0)) if rr_mean > 0 else np.nan
 
         feats["ga_weeks"]  = float(measurements[0].gestationalAgeWeeks)
         feats["pna_days"]  = float(measurements[0].postnatalAgeDays)
@@ -342,8 +369,6 @@ class InferenceService:
         if ecg_vals:
             feats.update(extract_ecg_beat_features(np.array(ecg_vals)))
         else:
-            # DÜZELTME: Sabit değerler yerine NaN — model bias'ı önlenir.
-            # ModelRunner.predict() NaN → 0.0 dönüşümü yaparak güvenli çalışır.
             feats.update({k: np.nan for k in ECG_FEATURE_COLS})
 
         return feats
@@ -354,11 +379,12 @@ class InferenceService:
         disease: str,
         feature_cols: list,
     ) -> list:
-        if not SHAP_AVAILABLE or disease not in self._shap_explainers:
+        shap_key = self._get_shap_key(disease)
+        if not SHAP_AVAILABLE or shap_key is None:
             return []
         try:
             with self._shap_lock:
-                explainer = self._shap_explainers[disease]
+                explainer = self._shap_explainers[shap_key]
                 vector    = np.array(
                     [features.get(c, 0.0) for c in feature_cols],
                     dtype=float,
@@ -378,7 +404,7 @@ class InferenceService:
                 for i in top3_idx
             ]
         except Exception as e:
-            print(f"[InferenceService] SHAP hesaplama hatası ({disease}): {e}")
+            print(f"[InferenceService] SHAP hatası ({shap_key}): {e}")
             return []
 
     def runInference(
@@ -397,9 +423,9 @@ class InferenceService:
             feature_cols = self._get_feature_cols(disease)
             threshold    = self._get_threshold(disease)
 
-            prob, label       = self.runner.predict(feats, disease, feature_cols, threshold)
-            scores[disease]   = prob
-            labels[disease]   = label
+            prob, label        = self.runner.predict(feats, disease, feature_cols, threshold)
+            scores[disease]    = prob
+            labels[disease]    = label
             shap_top3[disease] = self._compute_shap(feats, disease, feature_cols)
 
         result = AIResult(

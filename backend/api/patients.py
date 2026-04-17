@@ -1,5 +1,3 @@
-
-
 import uuid
 from datetime import datetime
 from typing import Optional
@@ -47,8 +45,9 @@ class PatientCreate(BaseModel):
 
 
 class PatientUpdate(BaseModel):
-    full_name:          Optional[str] = None
-    postnatal_age_days: Optional[int] = None
+    full_name:             Optional[str] = None
+    postnatal_age_days:    Optional[int] = None
+    gestational_age_weeks: Optional[int] = None  # DÜZELTME: GA güncellemesi eklendi
 
 
 class PatientResponse(BaseModel):
@@ -74,7 +73,6 @@ def _create_default_thresholds(db: Session, patient_id: str,
                                 ga_weeks: int) -> list[ThresholdRule]:
     """GA'ya göre hasta özel threshold kuralları oluşturur."""
 
-    # GA bazlı eşikler
     if ga_weeks < 28:
         hr_min, hr_max     = 120, 177
         spo2_min, spo2_max = 88, 98
@@ -125,7 +123,6 @@ def create_patient(
 ):
     """Yeni hasta oluştur — NURSE veya DOCTOR yetkisi gerekli."""
 
-    # Duplikat kontrol — aynı isim ve GA
     existing = db.query(Patient).filter(
         Patient.gestational_age_weeks == payload.gestational_age_weeks,
         Patient.is_active == True,
@@ -143,12 +140,11 @@ def create_patient(
         postnatal_age_days    = payload.postnatal_age_days,
         is_active             = True,
     )
-    patient.full_name = payload.full_name  # AES-256 şifreli setter
+    patient.full_name = payload.full_name
 
     db.add(patient)
     db.flush()
 
-    # Varsayılan threshold kuralları oluştur
     _create_default_thresholds(db, patient.patient_id, payload.gestational_age_weeks)
 
     db.commit()
@@ -182,6 +178,15 @@ def update_patient(
     if payload.postnatal_age_days is not None:
         patient.postnatal_age_days = payload.postnatal_age_days
 
+    # DÜZELTME: GA değiştirilince mevcut threshold kuralları silinip yeniden oluşturulur
+    if payload.gestational_age_weeks is not None and \
+       payload.gestational_age_weeks != patient.gestational_age_weeks:
+        if not 22 <= payload.gestational_age_weeks <= 42:
+            raise HTTPException(status_code=422, detail="Gestasyonel yaş 22-42 hafta arasında olmalıdır.")
+        patient.gestational_age_weeks = payload.gestational_age_weeks
+        db.query(ThresholdRule).filter(ThresholdRule.patient_id == patient_id).delete()
+        _create_default_thresholds(db, patient_id, payload.gestational_age_weeks)
+
     db.commit()
 
     return PatientResponse(
@@ -207,7 +212,6 @@ def archive_patient(
 
     patient.is_active = False
 
-    # Aktif stream'leri durdur
     active_streams = db.query(SignalStream).filter(
         SignalStream.patient_id == patient_id,
         SignalStream.is_active  == True,

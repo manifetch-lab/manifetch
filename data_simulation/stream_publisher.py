@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 import argparse, time, uuid, requests, threading, json
 from datetime import datetime, timezone
 from collections import deque
@@ -74,8 +76,9 @@ def build_schedules(scenario, ga_weeks, pna_days, pma_weeks, duration_sec, seed)
         return {}, {}, card, ["cardiac"]
     else:
         sep  = build_sepsis_schedule(onset_sec, duration_sec, baseline, sched_rng)
+        apn  = build_apnea_schedule(ga_weeks, pna_days, pma_weeks, onset_sec + 120, duration_sec, sched_rng)
         card = build_cardiac_schedule(onset_sec + 60, duration_sec, "bradyarrhythmia", sched_rng, ga_weeks)
-        return sep, {}, card, ["sepsis", "cardiac"]
+        return sep, apn, card, ["sepsis", "apnea", "cardiac"]
 
 
 def run_ai_inference(token, patient_id, measurement_buffer, ga_weeks, pna_days, pma_weeks):
@@ -141,7 +144,7 @@ def stream_patient(token, patient, scenario, duration_min, speed, seed):
     last_ai_sec = -AI_INTERVAL_SEC
 
     # AI için ölçüm buffer — son 30 saniyelik
-    measurement_buffer = deque(maxlen=90)  # HR + SPO2 + RR = ~3 ölçüm/sn
+    measurement_buffer = deque(maxlen=1000)  # HR + SPO2 + RR + ECG
 
     for s in range(duration_sec):
         rng_s = np.random.default_rng(seed + s * 7)
@@ -223,6 +226,16 @@ def stream_patient(token, patient, scenario, duration_min, speed, seed):
                     "timestamp":  ts,
                     "fs":         ECG_HZ,
                 }, headers=headers, timeout=1)
+                # ECG örneklerini AI buffer'a ekle
+                for ecg_val in samples:
+                    measurement_buffer.append({
+                        "timestamp_sec":       float(s),
+                        "signalType":          "ECG",
+                        "value":               ecg_val,
+                        "gestationalAgeWeeks": ga_weeks,
+                        "postnatalAgeDays":    pna_days,
+                        "pma_weeks":           pma_weeks,
+                    })
             except Exception:
                 pass
 
@@ -254,8 +267,8 @@ def main():
     parser.add_argument("--duration",   type=int,   default=60)
     parser.add_argument("--speed",      type=float, default=1.0)
     parser.add_argument("--seed",       type=int,   default=42)
-    parser.add_argument("--username", type=str, default=os.getenv("SEED_NURSE_USERNAME", "nurse_mehmet"))
-    parser.add_argument("--password", type=str, default=os.getenv("SEED_NURSE_PASSWORD", "Nurse123!"))
+    parser.add_argument("--username", type=str, default=os.getenv("SEED_NURSE_USERNAME"))
+    parser.add_argument("--password", type=str, default=os.getenv("SEED_NURSE_PASSWORD"))
     parser.add_argument("--list",       action="store_true")
     args = parser.parse_args()
 

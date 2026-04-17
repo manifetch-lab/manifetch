@@ -353,9 +353,19 @@ def train_disease(disease: str, data_dir: str, out_dir: str,
     print(f"  {disease.upper()} MODELİ{' — ' + label if label else ''}")
     print(f"{'='*55}")
 
-    path         = os.path.join(data_dir, f"features_{disease}.csv")
-    df           = pd.read_csv(path)
-    feature_cols = [c for c in feature_cols if c in df.columns]
+    path = os.path.join(data_dir, f"features_{disease}.csv")
+    df   = pd.read_csv(path)
+
+    if disease == "cardiac":
+        cardiac_cols = [
+            "hr_mean", "hr_std", "hr_min", "hr_max", "hr_last", "hr_slope", "hr_hrv",
+            "ecg_rr_mean_ms", "ecg_rr_std_ms", "ecg_rmssd_ms", "ecg_pnn50",
+            "ecg_amp_mean", "ecg_amp_std", "ecg_amp_min", "ecg_amp_slope",
+            "ga_weeks", "pna_days", "pma_weeks",
+        ]
+        feature_cols = [c for c in cardiac_cols if c in df.columns]
+    else:
+        feature_cols = [c for c in feature_cols if c in df.columns]
 
     # NaN → 0 (eksik ECG gibi durumlar)
     X      = np.nan_to_num(df[feature_cols].values, nan=0.0)

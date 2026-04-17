@@ -399,7 +399,7 @@ def build_cardiac_schedule(onset_sec, duration_sec, cardiac_type, rng, ga_weeks)
 
         if ep_subtype == "svt":
             peak_hr   =  float(rng.uniform(*svt_peak_range))
-            peak_spo2 = -float(rng.uniform(2, 8))
+            peak_spo2 = -float(rng.uniform(0.5, 2.0))
             peak_ecg  = -float(rng.uniform(0.30, 0.50))
             peak_rr   =  float(rng.uniform(5, 15))
         elif ep_subtype == "bradyarrhythmia":

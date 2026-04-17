@@ -5,7 +5,7 @@ from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc, func
 
 from backend.db.base import get_db
@@ -38,6 +38,7 @@ class AlertDTO(BaseModel):
     measurement_id:  Optional[str]
     status:          str
     severity:        str
+    signal_type:     Optional[str] = None
     created_at:      datetime
     acknowledged_at: Optional[datetime]
     acknowledged_by: Optional[str]
@@ -85,9 +86,18 @@ class TrendPoint(BaseModel):
 # ── Yardımcı fonksiyonlar ─────────────────────────────────────────────────────
 
 def _compute_pna(patient) -> int:
+    """
+    DÜZELTME: Timezone-aware datetime karşılaştırması.
+    Eski halde replace(tzinfo=None) ile timezone bilgisi siliniyor,
+    naive/aware karışıklığı oluşuyordu.
+    Şimdi admission_date her zaman UTC aware olarak işleniyor.
+    """
     try:
-        admission  = patient.admission_date.replace(tzinfo=None)
-        days_since = (datetime.now(timezone.utc).replace(tzinfo=None) - admission).days
+        admission = patient.admission_date
+        # Eğer naive datetime geldiyse UTC kabul et
+        if admission.tzinfo is None:
+            admission = admission.replace(tzinfo=timezone.utc)
+        days_since = (datetime.now(timezone.utc) - admission).days
         return patient.postnatal_age_days + days_since
     except Exception:
         return patient.postnatal_age_days
@@ -105,12 +115,11 @@ def _batch_alert_status(db: Session, patient_ids: list[str]) -> dict[str, str]:
         db.query(Alert.patient_id, Alert.severity)
         .filter(
             Alert.patient_id.in_(patient_ids),
-            Alert.status == AlertStatus.ACTIVE.value,
+            Alert.status.in_([AlertStatus.ACTIVE.value, AlertStatus.ACKNOWLEDGED.value]),
         )
         .all()
     )
 
-    # patient_id → en yüksek severity
     severity_rank = {"CRITICAL": 3, "HIGH": 2, "MEDIUM": 1, "LOW": 0}
     result: dict[str, str] = {pid: "STABLE" for pid in patient_ids}
 
@@ -136,7 +145,6 @@ def get_patients(
         query = query.filter(Patient.is_active == True)
     patients = query.order_by(desc(Patient.admission_date)).all()
 
-    # DÜZELTME: Tek sorguda tüm alert durumları
     patient_ids  = [p.patient_id for p in patients]
     alert_status = _batch_alert_status(db, patient_ids)
 
@@ -187,11 +195,8 @@ def get_active_alerts(
     if status:
         query = query.filter(Alert.status == status)
     else:
-        query = query.filter(Alert.status.in_([
-            AlertStatus.ACTIVE.value,
-            AlertStatus.ACKNOWLEDGED.value,
-        ]))
-    alerts = query.order_by(desc(Alert.created_at)).limit(limit).all()
+        query = query.filter(Alert.status.in_([AlertStatus.ACTIVE.value, AlertStatus.ACKNOWLEDGED.value]))
+    alerts = query.options(joinedload(Alert.rule)).order_by(desc(Alert.created_at)).limit(limit).all()
     return [
         AlertDTO(
             alert_id        = a.alert_id,
@@ -200,6 +205,7 @@ def get_active_alerts(
             measurement_id  = a.measurement_id,
             status          = a.status,
             severity        = a.severity,
+            signal_type     = a.rule.signal_type if a.rule else None,
             created_at      = a.created_at,
             acknowledged_at = a.acknowledged_at,
             acknowledged_by = a.acknowledged_by,
@@ -279,7 +285,6 @@ def get_latest_vitals(
     ]
 
 
-# DÜZELTME: response_model eklendi
 @router.get("/patients/{patient_id}/trends", response_model=list[TrendPoint])
 def get_trend_data(
     patient_id:   str,
@@ -455,11 +460,11 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
 
     story.append(Paragraph("Hasta Bilgileri" if is_tr else "Patient Information", heading_style))
     patient_data = [
-        ["Ad Soyad" if is_tr else "Full Name",           patient.full_name],
+        ["Ad Soyad" if is_tr else "Full Name",              patient.full_name],
         ["Gestasyonel Yaş" if is_tr else "Gestational Age", f"{patient.gestational_age_weeks} {'hafta' if is_tr else 'weeks'}"],
-        ["Postnatal Yaş" if is_tr else "Postnatal Age",   f"{pna} {'gün' if is_tr else 'days'}"],
-        ["Kabul Tarihi" if is_tr else "Admission Date",   patient.admission_date.strftime("%d.%m.%Y")],
-        ["Rapor Dönemi" if is_tr else "Report Period",    f"{'Son' if is_tr else 'Last'} {days} {'gün' if is_tr else 'days'}"],
+        ["Postnatal Yaş" if is_tr else "Postnatal Age",     f"{pna} {'gün' if is_tr else 'days'}"],
+        ["Kabul Tarihi" if is_tr else "Admission Date",     patient.admission_date.strftime("%d.%m.%Y")],
+        ["Rapor Dönemi" if is_tr else "Report Period",      f"{'Son' if is_tr else 'Last'} {days} {'gün' if is_tr else 'days'}"],
     ]
     t = Table(patient_data, colWidths=[5*cm, 10*cm])
     style = ts()
@@ -493,7 +498,7 @@ def _generate_pdf(patient, alerts, ai_results, days: int, pna: int, lang: str = 
     )
     story.append(Paragraph(ai_title, heading_style))
     if ai_results:
-        ai_data = [["Tarih" if is_tr else "Date", "Risk" , "Seviye" if is_tr else "Level", "Model"]]
+        ai_data = [["Tarih" if is_tr else "Date", "Risk", "Seviye" if is_tr else "Level", "Model"]]
         for r in ai_results[:15]:
             ai_data.append([
                 r.timestamp.strftime("%d.%m.%Y %H:%M"),

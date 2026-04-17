@@ -1,0 +1,40 @@
+{
+  "disease": "cardiac",
+  "split": "temporal_80_20",
+  "n_train_patients": 100,
+  "n_test_patients": 100,
+  "n_train_windows": 111600,
+  "n_test_windows": 27900,
+  "pos_ratio_test": 0.1078,
+  "f1_target": 0.8,
+  "all_f1_targets_met": true,
+  "results": {
+    "lgb": {
+      "f1": 0.8883,
+      "recall": 0.8996,
+      "precision": 0.8772,
+      "auc": 0.9741,
+      "aupr": 0.9355,
+      "threshold": 0.6028,
+      "f1_target_met": true
+    },
+    "rf": {
+      "f1": 0.8705,
+      "recall": 0.8219,
+      "precision": 0.9252,
+      "auc": 0.9753,
+      "aupr": 0.9326,
+      "threshold": 0.6398,
+      "f1_target_met": true
+    },
+    "xgb": {
+      "f1": 0.861,
+      "recall": 0.8308,
+      "precision": 0.8935,
+      "auc": 0.9672,
+      "aupr": 0.9214,
+      "threshold": 0.6701,
+      "f1_target_met": true
+    }
+  }
+}

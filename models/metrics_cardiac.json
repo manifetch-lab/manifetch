@@ -1,0 +1,61 @@
+{
+  "disease": "cardiac",
+  "best_model": "lgb",
+  "recall_target": null,
+  "results": {
+    "lgb": {
+      "f1": 0.8262,
+      "recall": 0.7357,
+      "precision": 0.942,
+      "auc": 0.9166,
+      "aupr": 0.8473,
+      "threshold": 0.7568,
+      "time": 1.8
+    },
+    "rf": {
+      "f1": 0.819,
+      "recall": 0.7449,
+      "precision": 0.9095,
+      "auc": 0.9164,
+      "aupr": 0.8457,
+      "threshold": 0.6466,
+      "time": 7.7
+    },
+    "xgb": {
+      "f1": 0.7997,
+      "recall": 0.7106,
+      "precision": 0.9144,
+      "auc": 0.91,
+      "aupr": 0.8335,
+      "threshold": 0.6673,
+      "time": 1.2
+    }
+  },
+  "feature_cols": [
+    "hr_mean",
+    "hr_std",
+    "hr_min",
+    "hr_max",
+    "hr_last",
+    "hr_slope",
+    "hr_hrv",
+    "ecg_rr_mean_ms",
+    "ecg_rr_std_ms",
+    "ecg_rmssd_ms",
+    "ecg_pnn50",
+    "ecg_amp_mean",
+    "ecg_amp_std",
+    "ecg_amp_min",
+    "ecg_amp_slope",
+    "ga_weeks",
+    "pna_days",
+    "pma_weeks"
+  ],
+  "n_train": 107415,
+  "n_test": 32085,
+  "pos_ratio": 0.1363,
+  "roc_auc": 0.9166,
+  "pr_auc": 0.8473,
+  "best_threshold": 0.7568,
+  "best_iter": 237
+}

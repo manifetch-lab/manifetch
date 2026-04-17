@@ -57,33 +57,48 @@ def export_vitals_to_parquet(
 
 def archive_old_vitals(days: int = 90):
     """
-    days gundan eski vital_measurements satirlarini parquet'e yazar ve siler.
+    days günden eski vital_measurements satırlarını parquet'e yazar ve siler.
     Alert ve ai_results etkilenmez.
+
+    DÜZELTME: Eski halde days_back=None ile tüm veri export ediliyordu,
+    sonra sadece eski satırlar siliniyordu — export ile silme tutarsızdı.
+    Şimdi cutoff doğrudan SQL sorgusuna geçiriliyor, sadece eski veri export edilir.
     """
-    cutoff = datetime.utcnow() - timedelta(days=days)
-    print(f"{days} gundan eski veriler arsivleniyor (kesim: {cutoff.date()})...")
+    cutoff     = datetime.utcnow() - timedelta(days=days)
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"{days} günden eski veriler arşivleniyor (kesim: {cutoff.date()})...")
 
-    ts  = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    out = export_vitals_to_parquet(
-        days_back=None,
-        filename=f"archive_{ts}.parquet",
-    )
+    # DÜZELTME: Sadece cutoff'tan eski satırları export et
+    os.makedirs(EXPORT_DIR, exist_ok=True)
+    ts    = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    query = "SELECT * FROM vital_measurements WHERE timestamp < :cutoff ORDER BY patient_id, timestamp"
 
-    if out is None:
+    print("  Eski veriler okunuyor...")
+    df = pd.read_sql(text(query), engine, params={"cutoff": cutoff_str})
+    print(f"  {len(df):,} satır okundu.")
+
+    if df.empty:
+        print("  Arşivlenecek eski kayıt bulunamadı.")
         return
 
+    out_path = os.path.join(EXPORT_DIR, f"archive_{ts}.parquet")
+    df.to_parquet(out_path, index=False, compression="snappy")
+    size_mb = os.path.getsize(out_path) / 1024 / 1024
+    print(f"  Arşiv kaydedildi: {out_path} ({size_mb:.1f} MB)")
+
+    # Export başarılıysa sil
     with engine.connect() as conn:
         result = conn.execute(
             text("DELETE FROM vital_measurements WHERE timestamp < :cutoff"),
-            {"cutoff": cutoff.strftime("%Y-%m-%d %H:%M:%S")},
+            {"cutoff": cutoff_str},
         )
         conn.commit()
-        print(f"  {result.rowcount:,} satir silindi.")
+        print(f"  {result.rowcount:,} satır silindi.")
 
     with engine.connect() as conn:
         conn.execute(text("VACUUM"))
         conn.commit()
-    print("  VACUUM tamamlandi.")
+    print("  VACUUM tamamlandı.")
 
 
 if __name__ == "__main__":

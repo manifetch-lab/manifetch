@@ -1,3 +1,18 @@
+"""
+UYARI — BU DOSYAYI DİKKATLİCE ÇALIŞTIRIN
+==========================================
+seed.py, all_vitals.csv içindeki tüm simüle hasta verisini (100+ hasta,
+milyonlarca satır) veritabanına yazar. Yanlışlıkla çalıştırılırsa:
+  - Varolan VitalMeasurement tablosu etkilenmez (zaten dolu kontrolü var)
+  - Ama yoksa yüz binlerce satır DB'ye yazılır ve geri alınamaz
+
+KULLANIM:
+  python -m backend.db.seed          # doğru kullanım
+  python backend/db/seed.py          # doğru kullanım
+
+Bu dosya hiçbir modülden import edilmemeli.
+"""
+
 import json
 import csv
 import os
@@ -40,9 +55,6 @@ def seed_patients(session, patients_meta: list) -> dict:
             id_map[pid] = pid
             continue
 
-        # DÜZELTME: Constructor'da full_name verme — setter çalışmaz.
-        # Önce nesneyi şifrelenmesi gerekmeyen alanlarla oluştur,
-        # sonra property setter üzerinden ata (AES-256 şifreleme tetiklenir).
         patient = Patient(
             patient_id            = pid,
             gestational_age_weeks = p["gestationalAgeWeeks"],
@@ -118,6 +130,16 @@ def seed_vitals(session, patient_ids: set):
 
 
 def main():
+    # DÜZELTME: Kazara çalıştırmaya karşı onay sorusu
+    print("=" * 60)
+    print("UYARI: Bu script tüm simüle veriyi DB'ye yazar.")
+    print("Yüz binlerce satır yazılabilir. Emin misiniz?")
+    print("=" * 60)
+    confirm = input("Devam etmek için 'evet' yazın: ").strip().lower()
+    if confirm != "evet":
+        print("İptal edildi.")
+        sys.exit(0)
+
     if not os.path.exists(METADATA_PATH):
         print(f"HATA: {METADATA_PATH} bulunamadı.")
         print("Önce generator.py ile veri üretmelisin.")

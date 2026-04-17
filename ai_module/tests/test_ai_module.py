@@ -1,6 +1,10 @@
 """
 Manifetch AI Modül Testi
 Test Plan: TC-11, TC-14, TC-16, TC-36
+
+DÜZELTME: TC-14 artık her model tipini _models dict'inden doğrudan çekerek
+ayrı ayrı test ediyor. Eski halde runner.predict her iterasyonda yine
+best_model'i seçtiği için RF/XGB/LGB gerçekte test edilmiyordu.
 """
 import sys, os, uuid, random, pickle, unittest, json
 import numpy as np
@@ -8,7 +12,8 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from ai_module.inference_service import (
     InferenceService, VitalMeasurement, AIResult,
-    VITAL_FEATURE_COLS, ECG_FEATURE_COLS,
+    VITAL_FEATURE_COLS, ECG_FEATURE_COLS, MODEL_TYPES,
+    LGB_AVAILABLE,
 )
 
 F1_TARGET = 0.80   # TC-36
@@ -43,6 +48,13 @@ def make_measurements(patient_id, scenario="healthy", n=30,
     return measurements
 
 
+def _predict_with_model(model, vector: np.ndarray) -> float:
+    """Model tipine göre doğru predict metodunu çağırır."""
+    if LGB_AVAILABLE and hasattr(model, "predict") and not hasattr(model, "predict_proba"):
+        return float(model.predict(vector)[0])
+    return float(model.predict_proba(vector)[0][1])
+
+
 class TestAIModule(unittest.TestCase):
 
     @classmethod
@@ -50,39 +62,62 @@ class TestAIModule(unittest.TestCase):
         cls.service   = InferenceService()
         cls.model_dir = cls.service.model_dir
 
-    # ── TC-14: RF ve XGBoost her ikisi de yüklü ve skor üretiyor ─────────────
+    # ── TC-14: RF, XGBoost, LightGBM dosyaları mevcut ve skor üretiyor ──────
 
     def test_tc14_rf_xgb_both_loaded(self):
-        """TC-14: RF ve XGBoost modelleri yüklü olmalı."""
+        """TC-14: RF ve XGBoost model dosyaları diskte mevcut olmalı."""
         for condition in ["sepsis", "apnea", "cardiac"]:
             rf_path  = os.path.join(self.model_dir, f"model_rf_{condition}.pkl")
             xgb_path = os.path.join(self.model_dir, f"model_xgb_{condition}.pkl")
             self.assertTrue(os.path.exists(rf_path),  f"RF model eksik: {rf_path}")
             self.assertTrue(os.path.exists(xgb_path), f"XGB model eksik: {xgb_path}")
-        print("TC-14 ✓ RF ve XGBoost modelleri mevcut")
+        print("TC-14 ✓ RF ve XGBoost model dosyaları mevcut")
 
     def test_tc14_rf_xgb_produce_scores(self):
-        """TC-14: Her iki model de 0-1 arasında risk skoru üretiyor."""
+        """
+        TC-14: RF, XGBoost ve LightGBM modelleri 0-1 arasında risk skoru üretiyor.
+
+        DÜZELTME: Her model tipi _models dict'inden doğrudan çekilip ayrı ayrı
+        çalıştırılıyor. Eski halde runner.predict her iterasyonda best_model'i
+        seçtiğinden RF/XGB/LGB gerçekte test edilmiyordu.
+        """
         pid  = str(uuid.uuid4())
         meas = make_measurements(pid, "sepsis")
+
         for condition in ["sepsis", "apnea", "cardiac"]:
             feats        = self.service.preprocess(meas, condition)
             feature_cols = self.service._get_feature_cols(condition)
             threshold    = self.service._get_threshold(condition)
 
-            for model_type in ["rf", "xgb"]:
-                model_path = os.path.join(self.model_dir, f"model_{model_type}_{condition}.pkl")
-                if not os.path.exists(model_path):
+            vector = np.array(
+                [feats.get(c, 0.0) for c in feature_cols],
+                dtype=float,
+            ).reshape(1, -1)
+            vector = np.nan_to_num(vector, nan=0.0)
+
+            tested = []
+            for mtype in MODEL_TYPES:
+                model_key = f"{condition}_{mtype}"
+                model = self.service._models.get(model_key)
+                if model is None:
                     continue
-                with open(model_path, "rb") as f:
-                    model = pickle.load(f)
-                score, label = self.service.runner.predict(
-                    feats, condition, feature_cols, threshold
-                )
-                self.assertGreaterEqual(score, 0.0)
-                self.assertLessEqual(score, 1.0)
-                self.assertIn(label, [0, 1])
-        print("TC-14 ✓ RF ve XGBoost skorları üretiyor")
+
+                prob  = _predict_with_model(model, vector)
+                label = int(prob >= threshold)
+
+                self.assertGreaterEqual(prob, 0.0,
+                    f"{condition}/{mtype}: skor 0'dan küçük")
+                self.assertLessEqual(prob, 1.0,
+                    f"{condition}/{mtype}: skor 1'den büyük")
+                self.assertIn(label, [0, 1],
+                    f"{condition}/{mtype}: label 0 veya 1 olmalı")
+                tested.append(mtype)
+
+            self.assertGreater(
+                len(tested), 0,
+                f"{condition} için hiç model yüklenmemiş"
+            )
+            print(f"TC-14 ✓ {condition}: {tested} → skorlar üretildi")
 
     # ── TC-11: SHAP top-3 özellikler ────────────────────────────────────────
 
@@ -109,7 +144,6 @@ class TestAIModule(unittest.TestCase):
         self.assertIsInstance(result, AIResult)
         self.assertEqual(result.patientId, pid)
         self.assertIn(result.riskLevel, ["LOW", "MEDIUM", "HIGH"])
-        # Multi-label alanları kontrol et
         self.assertIsInstance(result.sepsis_score,  float)
         self.assertIsInstance(result.apnea_score,   float)
         self.assertIsInstance(result.cardiac_score, float)
@@ -174,7 +208,6 @@ class TestAIModule(unittest.TestCase):
         all_passed = True
         missing    = []
 
-        # Hastalık bazlı hedefler
         targets = {
             "apnea":   {"metric": "recall", "threshold": 0.85},
             "cardiac": {"metric": "f1",     "threshold": F1_TARGET},
@@ -191,9 +224,9 @@ class TestAIModule(unittest.TestCase):
             with open(result_path) as f:
                 data = json.load(f)
 
-            results    = data.get("results", {})
-            metric_key = target["metric"]
-            threshold  = target["threshold"]
+            results        = data.get("results", {})
+            metric_key     = target["metric"]
+            threshold      = target["threshold"]
             disease_passed = False
 
             for model_type, metrics in results.items():
@@ -219,7 +252,7 @@ class TestAIModule(unittest.TestCase):
             all_passed,
             "Bazı hastalıklar için hiçbir model hedefi karşılamadı."
         )
-        print(f"\nTC-36 ✓ Tüm modeller F1 ≥ {F1_TARGET} hedefini karşıladı.")
+        print(f"\nTC-36 ✓ Tüm modeller hedefi karşıladı.")
 
     # ── ModelRunner testi ─────────────────────────────────────────────────────
 
@@ -227,6 +260,7 @@ class TestAIModule(unittest.TestCase):
         """ModelRunner.get_model_version() crash yapmadan çalışmalı."""
         version = self.service.runner.get_model_version()
         self.assertIsInstance(version, str)
+        self.assertGreater(len(version), 0)
         print(f"ModelRunner ✓ version: {version}")
 
 

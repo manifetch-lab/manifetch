@@ -108,7 +108,11 @@ def evaluate_model(name, model, X_test, y_test, recall_target=None, is_lgb=False
     auc       = roc_auc_score(y_test, y_prob) if len(np.unique(y_test)) > 1 else 0.0
     aupr      = average_precision_score(y_test, y_prob) if len(np.unique(y_test)) > 1 else 0.0
 
-    f1_ok = "✓" if f1 >= F1_TARGET else "✗"
+    if recall_target:
+        f1_ok = "✓" if recall >= recall_target else "✗"
+    else:
+        f1_ok = "✓" if f1 >= F1_TARGET else "✗"
+
     print(f"  {name:<12} F1={f1:.4f} {f1_ok}  "
           f"Recall={recall:.4f}  Precision={precision:.4f}  "
           f"AUC={auc:.4f}  thr={threshold:.3f}")
@@ -117,7 +121,7 @@ def evaluate_model(name, model, X_test, y_test, recall_target=None, is_lgb=False
         "f1": round(f1, 4), "recall": round(recall, 4),
         "precision": round(precision, 4), "auc": round(auc, 4),
         "aupr": round(aupr, 4), "threshold": round(threshold, 4),
-        "f1_target_met": f1 >= F1_TARGET,
+        "f1_target_met": (recall >= recall_target if recall_target else f1 >= F1_TARGET),
     }
 
 
@@ -132,8 +136,19 @@ def validate_disease(disease: str, data_dir: str, out_dir: str):
         return {}
 
     df           = pd.read_csv(path)
-    feature_cols = [c for c in FEATURE_COLS_ALL if c in df.columns]
 
+    if disease == "cardiac":
+        cardiac_cols = [
+            "hr_mean", "hr_std", "hr_min", "hr_max", "hr_last", "hr_slope", "hr_hrv",
+            "ecg_rr_mean_ms", "ecg_rr_std_ms", "ecg_rmssd_ms", "ecg_pnn50",
+            "ecg_amp_mean", "ecg_amp_std", "ecg_amp_min", "ecg_amp_slope",
+            "ga_weeks", "pna_days", "pma_weeks",
+        ]
+        feature_cols = [c for c in cardiac_cols if c in df.columns]
+    else:
+        feature_cols = [c for c in FEATURE_COLS_ALL if c in df.columns]
+    
+    
     # Temporal split
     train_df, test_df = temporal_split(df, train_ratio=0.80)
 

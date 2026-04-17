@@ -44,6 +44,7 @@ const en = {
   // Patient Detail
   patientDetail: {
     patientInfo: "Patient Info",
+    backToList: "Patient Dashboard",
     deviceConnected: "Device Connected",
     monitoringActive: "Real-time monitoring active",
     noCriticalAlerts: "✓ No Critical Alerts",

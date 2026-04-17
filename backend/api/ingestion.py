@@ -40,7 +40,6 @@ class VitalPayload(BaseModel):
     label_healthy:         int = 0
 
 
-# DÜZELTME: /vital endpoint'ine auth eklendi — daha önce tamamen açıktı
 @router.post("/vital")
 async def ingest_vital(
     payload:          VitalPayload,
@@ -50,7 +49,7 @@ async def ingest_vital(
 ):
     """
     Simülasyon katmanından gelen ölçümü alır.
-    Tüm roller okuyabilir; kimlik doğrulaması zorunlu.
+    Tüm roller erişebilir; kimlik doğrulaması zorunlu.
     """
     if payload.stream_id:
         stream = db.query(SignalStream).filter(
@@ -84,14 +83,11 @@ async def ingest_vital(
     db.add(measurement)
     db.flush()
 
-    # DÜZELTME: AlertService artık kendi commit etmiyor —
-    # transaction yönetimi burada, tek commit noktası aşağıdaki db.commit()
     alert_service = AlertService(db)
     triggered     = alert_service.process_measurement(measurement)
 
     db.commit()
 
-    # WebSocket bildirimleri (background task — response'u bloklamaz)
     background_tasks.add_task(_ws_notify_vital, measurement)
     if triggered:
         for alert in triggered:
@@ -124,37 +120,6 @@ def get_active_alerts(
         }
         for a in alerts
     ]
-
-
-# DÜZELTME: acknowledge artık current_user'dan user_id alıyor — query param yok
-@router.patch("/alerts/{alert_id}/acknowledge")
-def acknowledge_alert(
-    alert_id:     str,
-    db:           Session = Depends(get_db),
-    current_user: User    = Depends(require_nurse),
-):
-    """Alert'i onayla — NURSE veya DOCTOR yetkisi gerekli."""
-    alert_service = AlertService(db)
-    alert         = alert_service.acknowledge(alert_id, current_user.user_id)
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert bulunamadı.")
-    return {"status": "acknowledged", "alert_id": alert.alert_id}
-
-
-@router.patch("/alerts/{alert_id}/resolve")
-def resolve_alert(
-    alert_id:     str,
-    db:           Session = Depends(get_db),
-    current_user: User    = Depends(require_nurse),
-):
-    alert_service = AlertService(db)
-    try:
-        alert = alert_service.resolve(alert_id)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert bulunamadı.")
-    return {"status": "resolved", "alert_id": alert.alert_id}
 
 
 # ── WebSocket yardımcı fonksiyonları ─────────────────────────────────────────

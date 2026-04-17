@@ -22,7 +22,7 @@ from scipy.signal import find_peaks
 ECG_HZ = 25
 
 CONFIGS = {
-    "apnea":   {"x_sec": 1200, "y_sec": 300,  "step_sec": 30},   # inference_service ile eşleşiyor
+    "apnea":   {"x_sec": 300, "y_sec": 300,  "step_sec": 30},   # inference_service ile eşleşiyor
     "cardiac": {"x_sec": 1800, "y_sec": 900,  "step_sec": 60},
     "sepsis":  {"x_sec": 3600, "y_sec": 3600, "step_sec": 60},
 }

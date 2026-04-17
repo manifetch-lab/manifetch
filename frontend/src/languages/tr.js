@@ -44,6 +44,7 @@ const tr = {
   // Patient Detail
   patientDetail: {
     patientInfo: "Hasta Bilgisi",
+    backToList: "Hasta Paneli",
     deviceConnected: "Cihaz Bağlı",
     monitoringActive: "Gerçek zamanlı izleme aktif",
     noCriticalAlerts: "✓ Kritik Alert Yok",
